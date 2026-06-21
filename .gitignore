@@ -1,0 +1,22 @@
+# Auto-generated SDD/orchestrator metadata
+.atl/
+.atl/**
+.skill-registry.cache.json
+
+# Env / secrets
+.env
+
+# Runtime data
+.data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
