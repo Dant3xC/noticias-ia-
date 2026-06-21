@@ -1,17 +1,18 @@
 # noticias-ia
 
-A personal CLI news aggregator for Argentinian RSS sources. Cross-references stories
-across outlets from different ideological positions, computes algorithmic trust labels,
-and uses a cheap/free LLM to write structured daily summaries.
+Agregador CLI personal de noticias para fuentes RSS argentinas. Contrasta las
+coberturas entre medios de distintas posiciones ideológicas, calcula etiquetas
+de confianza algorítmicas y utiliza un LLM económico o gratuito para escribir
+resúmenes diarios estructurados.
 
-The core insight: **fake news detection by contrast** — when sources from different
-ideological positions agree on facts, the story is more trustworthy; when they diverge,
-the divergence is flagged.
+La idea central: **detección de noticias falsas por contraste**: cuando fuentes
+de distintas posiciones ideológicas coinciden en los hechos, la historia es más
+confiable; cuando divergen, la divergencia se marca.
 
-## Install
+## Instalación
 
 ```bash
-# Clone and install
+# Clonar e instalar
 git clone https://github.com/Dant3xC/noticias-ia-.git
 cd noticias-ia
 pip install -e ".[dev]"
@@ -19,67 +20,69 @@ pip install -e ".[dev]"
 
 ### Windows
 
-If you see garbled accented characters (á, é, í, ó, ú) in PowerShell, set the
-`PYTHONUTF8` environment variable before running the tool:
+Si ve caracteres acentuados ilegibles (á, é, í, ó, ú) en PowerShell, configure
+la variable de entorno `PYTHONUTF8` antes de ejecutar la herramienta:
 
 ```powershell
 $env:PYTHONUTF8 = 1
 ```
 
-Or add it permanently via System Properties → Environment Variables.
+O agréguela de forma permanente desde Propiedades del sistema → Variables de entorno.
 
-## Environment Setup
+## Configuración del entorno
 
-Copy `.env.example` to `.env` and add your API keys:
+Copie `.env.example` a `.env` y agregue sus claves de API:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` with your actual API keys:
+Luego edite `.env` con sus claves reales:
 
 ```
-GROQ_API_KEY=gsk_your_actual_key
-GEMINI_API_KEY=your_actual_key
-OPENAI_API_KEY=sk-your_actual_key
+GROQ_API_KEY=gsk_su_clave_real
+GEMINI_API_KEY=su_clave_real
+OPENAI_API_KEY=sk-su_clave_real
 ```
 
-At least one key is required for LLM summaries. All three are optional — the tool
-will work with whatever provider(s) you configure and fall back between them.
+Se requiere al menos una clave para los resúmenes con LLM. Las tres son
+opcionales: la herramienta funciona con cualquier proveedor que configure
+y aplica fallback entre ellos.
 
-## First Run
+## Primera ejecución
 
 ```bash
-# Check the version
+# Verificar la versión
 python -m noticias --version
 
-# List configured sources (initially empty)
+# Listar las fuentes configuradas (inicialmente vacío)
 python -m noticias fuentes list
 
-# Add the two recommended openly-partisan sources (their RSS URLs are placeholders —
-# replace with the actual feed URLs):
+# Agregar las dos fuentes abiertamente partidarias recomendadas
+# (las URLs del RSS son marcadores: reemplácelas con las URLs reales del feed):
 noticias fuentes add laizquierdadiario https://laizquierdadiario.com.ar/rss --lean left
 noticias fuentes add derechadiario https://derechadiario.com.ar/rss --lean right
 
-# Now run the daily summary
+# Ejecutar el resumen diario
 noticias resumen
 ```
 
-## Usage
+## Uso
 
-| Command | Description |
+| Comando | Descripción |
 |---------|-------------|
-| `noticias fuentes list` | List configured sources |
-| `noticias fuentes add <name> <url> --lean left\|center\|right` | Add a source |
-| `noticias fuentes remove <name>` | Remove a source |
-| `noticias resumen` | Run the full pipeline and get today's news summary |
-| `noticias health` | Pre-flight check on all sources |
-| `noticias snapshot list` | List daily snapshots |
-| `noticias snapshot show <file>` | Re-render a stored snapshot |
+| `noticias fuentes list` | Listar las fuentes configuradas |
+| `noticias fuentes add <nombre> <url> --lean left\|center\|right` | Agregar una fuente. Valores de `--lean`: `left` (izquierda), `center` (centro), `right` (derecha) |
+| `noticias fuentes remove <nombre>` | Quitar una fuente |
+| `noticias resumen` | Ejecutar el pipeline completo y obtener el resumen del día |
+| `noticias health` | Verificación previa del estado de las fuentes |
+| `noticias snapshot list` | Listar las instantáneas diarias |
+| `noticias snapshot show <archivo>` | Volver a renderizar una instantánea guardada |
 
-## Design Notes
+## Notas de diseño
 
-Event labels use Longest Common Substring (LCS) across cluster titles, with
-fallback to the first item's title. This avoids the ~40MB spaCy dependency that
-noun-phrase extraction would require. LCS ≥ 20 characters AND ≥ 3 words is
-required to be used; otherwise the first title serves as the label.
+Las etiquetas de evento utilizan la subcadena común más larga (LCS) entre los
+títulos del clúster, con fallback al primer título del ítem. Esto evita la
+dependencia de spaCy (~40 MB) que requeriría la extracción de sintagmas
+nominales. Se requiere que la LCS tenga ≥ 20 caracteres Y ≥ 3 palabras para
+ser utilizada; de lo contrario, se usa el primer título como etiqueta.

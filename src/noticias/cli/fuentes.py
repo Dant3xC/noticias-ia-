@@ -20,7 +20,7 @@ def fuentes_list(registry: SourceRegistry) -> None:
     if not sources:
         console.print(
             "[yellow]No hay fuentes configuradas. "
-            "Usá `noticias fuentes add` para agregar una.[/yellow]"
+            "Use `noticias fuentes add` para agregar una.[/yellow]"
         )
         return
 

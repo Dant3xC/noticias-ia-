@@ -13,11 +13,11 @@ from noticias.sources.registry import SourceRegistry
 
 app = typer.Typer(
     name="noticias",
-    help="Personal CLI news aggregator for Argentinian RSS sources",
+    help="Agregador CLI de noticias para fuentes RSS argentinas",
     rich_markup_mode="rich",
 )
 
-fuentes_app = typer.Typer(name="fuentes", help="Manage news sources")
+fuentes_app = typer.Typer(name="fuentes", help="Administrar las fuentes de noticias")
 app.add_typer(fuentes_app)
 
 
@@ -35,14 +35,14 @@ def main(
         "--version",
         callback=_version_callback,
         is_eager=True,
-        help="Show version and exit",
+        help="Mostrar la versión y salir",
     ),
 ) -> None:
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
 
 
-@fuentes_app.command("list")
+@fuentes_app.command("list", help="Listar todas las fuentes configuradas.")
 def fuentes_list_command() -> None:
     """List all configured news sources."""
     registry = SourceRegistry.default()
