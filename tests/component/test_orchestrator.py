@@ -450,11 +450,11 @@ async def test_tokens_used_not_double_counted() -> None:
             f"Expected LLM summary 'OK.', got stub: '{cluster.summary}'"
         )
 
-    # Each LLM call adds ~200-300 tokens (small payload + system prompt).
-    # 3 clusters: ~600-900 tokens. With double-counting: ~1200-1800.
-    # Threshold 1000 catches the bug but allows normal operation.
-    assert llm_client.tokens_used < 1000, (
-        f"tokens_used = {llm_client.tokens_used} >= 1000; "
+    # Each LLM call adds ~80-90 tokens (small payload + system prompt).
+    # 3 clusters: ~250 tokens. With double-counting: ~980.
+    # Threshold 500 catches the bug while allowing normal operation.
+    assert llm_client.tokens_used < 500, (
+        f"tokens_used = {llm_client.tokens_used} >= 500; "
         f"this suggests the double-counting bug is back"
     )
 
