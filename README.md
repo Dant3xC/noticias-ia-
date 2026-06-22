@@ -76,26 +76,28 @@ siguen calculándose con normalidad.
 
 ## Primera ejecución
 
+La instalación trae 7 fuentes por defecto (5 medios diversos + 2 abiertamente
+partisanos para el contraste ideológico). Las URLs fueron verificadas y deberían
+funcionar out-of-the-box:
+
+| Fuente | Línea | URL del feed |
+|--------|-------|--------------|
+| Página/12 | left | `https://www.pagina12.com.ar/rss/portada` |
+| La Izquierda Diario | left | `http://www.laizquierdadiario.com/spip.php?page=backend_portada` |
+| Infobae | center | `https://www.infobae.com/arc/outboundfeeds/rss/argentina/` |
+| Ámbito | center | `https://www.ambito.com/rss/home.xml` |
+| La Nación | right | `https://www.lanacion.com.ar/arc/outboundfeeds/rss/` |
+| Clarín | right | `https://www.clarin.com/rss/lo-ultimo/` |
+| Derecha Diario | right | `https://derechadiario.com.ar/rss` |
+
 ```bash
 # Verificar la versión
 python -m noticias --version
 
-# Listar las fuentes configuradas (inicialmente vacío)
+# Listar las fuentes configuradas (debería mostrar 7 por defecto)
 python -m noticias fuentes list
 
-# Agregar las fuentes recomendadas
-python -m noticias fuentes add pagina12 https://www.pagina12.com.ar/rss/portada --lean left
-python -m noticias fuentes add lanacion https://www.lanacion.com.ar/rss/ultimas-noticias/ --lean right
-python -m noticias fuentes add clarin https://www.clarin.com/rss/lo-mas-visto/ --lean right
-python -m noticias fuentes add infobae https://www.infobae.com/rss/ --lean center
-python -m noticias fuentes add ambito https://www.ambito.com/rss/home.xml --lean center
-
-# (Opcional) Agregar fuentes abiertamente partidarias para mejor contraste
-# Busque las URLs reales de sus RSS feeds:
-python -m noticias fuentes add laizquierdadiario https://laizquierdadiario.com.ar/rss --lean left
-python -m noticias fuentes add derechadiario https://derechadiario.com.ar/rss --lean right
-
-# Verificar que las URLs respondan
+# Verificar que los feeds responden
 python -m noticias health
 
 # Ejecutar el resumen diario (sin LLM, usa resúmenes plantilla)
@@ -104,6 +106,8 @@ python -m noticias resumen --no-llm
 # Con LLM (si configuró al menos una clave)
 python -m noticias resumen
 ```
+
+Si algún feed se rompe en el futuro, use `noticias fuentes add <nombre> <url> --lean <left|center|right>` para reemplazarlo, o `noticias fuentes remove <nombre>` para sacarlo.
 
 ## Uso
 
