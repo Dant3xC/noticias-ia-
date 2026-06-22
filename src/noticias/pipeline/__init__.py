@@ -6,6 +6,7 @@ from noticias.pipeline.family import (
     truncate_payload,
 )
 from noticias.pipeline.fetch import FetchFailure, FetchResult, fetch_all_sources
+from noticias.pipeline.orchestrator import run_pipeline, run_pipeline_async
 from noticias.pipeline.tokenize import STOPWORDS, tokenize
 from noticias.pipeline.window import apply_window, parse_since
 
@@ -20,6 +21,8 @@ __all__ = [
     "FetchFailure",
     "FetchResult",
     "parse_since",
+    "run_pipeline",
+    "run_pipeline_async",
     "STOPWORDS",
     "tokenize",
     "truncate_payload",
