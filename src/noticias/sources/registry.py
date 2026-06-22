@@ -11,6 +11,7 @@ from pathlib import Path
 import msgspec
 
 from noticias.models.source import Source, SourceConfig
+from noticias.sources.defaults import DEFAULT_SOURCES
 
 
 class SourceRegistry:
@@ -73,7 +74,13 @@ class SourceRegistry:
     def default(cls) -> SourceRegistry:
         """Load the user's default config file (~/.config/noticias/config.json).
 
-        Returns an empty registry (zero sources) if the file does not exist.
+        Fresh install (file does not exist): returns a registry seeded with
+        the 7 default Argentinian RSS sources from `defaults.py`. The user
+        can then add, remove, or modify sources via the `fuentes` subcommand.
+
+        Existing user (file exists): returns whatever they previously saved.
         """
         path = Path.home() / ".config" / "noticias" / "config.json"
+        if not path.exists():
+            return cls(config=SourceConfig(sources=list(DEFAULT_SOURCES)))
         return cls.load(path)
