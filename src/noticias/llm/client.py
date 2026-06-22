@@ -189,3 +189,41 @@ def template_summary(cluster: Cluster) -> str:
         "Sin resumen disponible "
         "(presupuesto de LLM agotado o sin claves configuradas)."
     )
+
+
+class StubLLMClient:
+    """LLM client that always returns stub summaries (for ``--no-llm`` mode).
+
+    Does **not** load API keys, does **not** make network calls.
+    ``estimate_tokens`` returns 0 and ``budget_remaining`` returns 0
+    so that the orchestrator's budget check passes without consuming
+    the budget.
+    """
+
+    def __init__(self) -> None:
+        self.tokens_used: int = 0
+        self.token_budget: int = 0
+
+    async def complete(
+        self,
+        messages: list[dict[str, str]],
+        json_mode: bool = True,  # noqa: ARG002
+    ) -> str | None:
+        """Return a stub JSON summary immediately (no network call)."""
+        return (
+            '{"summary": "Resumen no disponible (modo --no-llm).", '
+            '"highlights": []}'
+        )
+
+    @staticmethod
+    def estimate_tokens(text: str) -> int:  # noqa: ARG004
+        """Return 0 — no tokens consumed in stub mode."""
+        return 0
+
+    @property
+    def budget_remaining(self) -> int:
+        """Always 0 — stub client does not consume budget."""
+        return 0
+
+    def __repr__(self) -> str:
+        return "StubLLMClient()"
