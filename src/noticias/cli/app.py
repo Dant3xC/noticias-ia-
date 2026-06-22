@@ -209,7 +209,7 @@ def resumen_command(
     # ── Build LLM client ───────────────────────────────────────────────
     config = SourceConfig()
     if no_llm:
-        llm: LLMClient | StubLLMClient = StubLLMClient()
+        llm: LLMClient = StubLLMClient()
     else:
         llm = LLMClient(token_budget=config.token_budget)
 

@@ -191,7 +191,7 @@ def template_summary(cluster: Cluster) -> str:
     )
 
 
-class StubLLMClient:
+class StubLLMClient(LLMClient):
     """LLM client that always returns stub summaries (for ``--no-llm`` mode).
 
     Does **not** load API keys, does **not** make network calls.
@@ -203,6 +203,8 @@ class StubLLMClient:
     def __init__(self) -> None:
         self.tokens_used: int = 0
         self.token_budget: int = 0
+        self.models: list[str] = []
+        self._keys: dict[str, str | None] = {}
 
     async def complete(
         self,
