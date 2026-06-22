@@ -137,7 +137,6 @@ async def run_pipeline_async(
         )
         cluster.summary = llm_response.summary
         cluster.highlights = llm_response.highlights
-        llm.tokens_used += tokens
 
     return clusters
 

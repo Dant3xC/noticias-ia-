@@ -406,6 +406,60 @@ async def test_per_source_failure_isolation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tokens_used_not_double_counted() -> None:
+    """Regression: orchestrator must not double-increment llm.tokens_used.
+
+    Previously, both LLMClient.complete() and the orchestrator incremented
+    tokens_used after each successful call, halving the effective budget.
+    After 3 small clusters, tokens_used should be under the doubled threshold
+    (~1000 tokens). If the bug returns, tokens_used will exceed this.
+    """
+    config = _make_config()
+    sources = config.sources
+    items = _SAMPLE_CLUSTER_ITEMS  # 3 clusters form from these
+
+    with (
+        patch(
+            "noticias.pipeline.orchestrator.fetch_all_sources",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "noticias.llm.client.litellm.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_llm,
+    ):
+        mock_fetch.return_value = FetchResult(items=items, failures=[])
+        mock_llm.return_value = MockLLMResponse(
+            '{"summary": "OK.", "highlights": []}',
+        )
+
+        llm_client = LLMClient(token_budget=5000)
+        llm_client._keys["groq"] = "fake_key"
+
+        clusters = await run_pipeline_async(
+            sources=sources,
+            window=timedelta(hours=24),
+            llm=llm_client,
+            config=config,
+        )
+
+    # All 3 clusters should have LLM summaries (not stub) — mock returns valid JSON
+    assert len(clusters) == 3
+    for cluster in clusters:
+        assert cluster.summary == "OK.", (
+            f"Expected LLM summary 'OK.', got stub: '{cluster.summary}'"
+        )
+
+    # Each LLM call adds ~200-300 tokens (small payload + system prompt).
+    # 3 clusters: ~600-900 tokens. With double-counting: ~1200-1800.
+    # Threshold 1000 catches the bug but allows normal operation.
+    assert llm_client.tokens_used < 1000, (
+        f"tokens_used = {llm_client.tokens_used} >= 1000; "
+        f"this suggests the double-counting bug is back"
+    )
+
+
+@pytest.mark.asyncio
 async def test_trust_and_summary_labels_are_set() -> None:
     """All clusters have trust label, reason, and summary set."""
     config = _make_config()
