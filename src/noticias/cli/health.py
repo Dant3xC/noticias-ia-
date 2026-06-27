@@ -69,10 +69,28 @@ def health(registry: SourceRegistry) -> None:
 
 
 async def _check_all(sources: list) -> list[tuple[str, str, str, int | None, float]]:
-    """Check all sources concurrently and return per-source results."""
-    timeout = httpx.Timeout(10.0)
+    """Check all sources concurrently and return per-source results.
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    Uses the same browser-like headers as the fetch pipeline to
+    avoid Cloudflare CDN challenges (e.g. ambito returning 403).
+    """
+    timeout = httpx.Timeout(10.0)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/136.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+        "Accept-Language": "es-AR,es;q=0.9,en;q=0.5",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
         tasks = [_check_one(source, client) for source in sources]
         return await asyncio.gather(*tasks)
 
@@ -89,6 +107,25 @@ async def _check_one(
     try:
         response = await client.head(source.url, follow_redirects=True)
         elapsed = (time.monotonic() - start) * 1000
+
+        # 403 (CDN challenge) → retry once with Firefox UA
+        if response.status_code == 403:
+            try:
+                alt_headers = dict(client.headers)
+                alt_headers["User-Agent"] = (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) "
+                    "Gecko/20100101 Firefox/136.0"
+                )
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(10.0),
+                    headers=alt_headers,
+                ) as alt_client:
+                    start = time.monotonic()
+                    response = await alt_client.head(source.url, follow_redirects=True)
+                    elapsed = (time.monotonic() - start) * 1000
+            except httpx.HTTPError:
+                pass  # use original 403 result
+
         if response.is_success:
             return (source.name, source.url, "OK", response.status_code, elapsed)
         return (source.name, source.url, "Error", response.status_code, elapsed)

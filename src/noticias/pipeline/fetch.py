@@ -25,15 +25,35 @@ from noticias.sources.adapters import get_adapter, normalize
 
 logger = logging.getLogger(__name__)
 
+# Rotated from Chrome/131 → 136 to reduce Cloudflare challenge frequency.
+# See https://github.com/dante/noticias-ia/issues/ambito-403 for background.
 _DEFAULT_USER_AGENT: str = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
+    "Chrome/136.0.0.0 Safari/537.36"
 )
 
 
+# Fallback User-Agent used only when a 403 is received (to retry with a
+# different browser profile that the CDN may not have fingerprinted yet).
+_FALLBACK_USER_AGENT: str = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) "
+    "Gecko/20100101 Firefox/136.0"
+)
+
 _DEFAULT_ACCEPT: str = "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8"
 _DEFAULT_ACCEPT_LANGUAGE: str = "es-AR,es;q=0.9,en;q=0.5"
+
+# Browser-request headers (Sec-* family) to help pass Cloudflare challenges.
+# These are added as defaults because some sources (notably ambito) use
+# Cloudflare's JS / bot-detection layer that penalises clients lacking them.
+_BROWSER_HEADERS: dict[str, str] = {
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 
 def _resolve_user_agent() -> str:
@@ -97,6 +117,7 @@ async def fetch_all_sources(
         "User-Agent": ua,
         "Accept": _DEFAULT_ACCEPT,
         "Accept-Language": _DEFAULT_ACCEPT_LANGUAGE,
+        **_BROWSER_HEADERS,
     }
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout_s),
@@ -169,19 +190,37 @@ async def _fetch_one(
 
         # ── Fetch ─────────────────────────────────────────────────────
         logger.info("Fetching '%s' from %s", source.name, source.url)
-        try:
-            response = await client.get(source.url)
-            response.raise_for_status()
-        except httpx.TimeoutException:
-            logger.warning("Timeout fetching '%s'", source.name)
-            return FetchFailure(source=source.name, reason="Timeout")
-        except httpx.HTTPStatusError as exc:
-            code = exc.response.status_code
-            logger.warning("HTTP %s fetching '%s'", code, source.name)
-            return FetchFailure(source=source.name, reason=f"HTTP {code}")
-        except httpx.HTTPError as exc:
-            logger.warning("HTTP error fetching '%s': %s", source.name, exc)
-            return FetchFailure(source=source.name, reason=str(exc))
+
+        # We attempt the fetch and may retry once on 403 (CDN challenge).
+        response = await _attempt_fetch(source, client)
+        if response is None:
+            # 403 — retry once with Firefox UA + fresh client
+            logger.info(
+                "Got 403 fetching '%s'; retrying with Firefox UA",
+                source.name,
+            )
+            alt_headers = {
+                "User-Agent": _FALLBACK_USER_AGENT,
+                "Accept": _DEFAULT_ACCEPT,
+                "Accept-Language": _DEFAULT_ACCEPT_LANGUAGE,
+                **_BROWSER_HEADERS,
+            }
+            try:
+                async with httpx.AsyncClient(
+                    timeout=client.timeout,
+                    headers=alt_headers,
+                ) as alt_client:
+                    response = await _attempt_fetch(source, alt_client)
+            except httpx.HTTPError:
+                response = None
+
+        if response is None:
+            return FetchFailure(
+                source=source.name,
+                reason="HTTP 403 (retried with alternative UA)",
+            )
+        if isinstance(response, FetchFailure):
+            return response
 
     # ── Parse & normalise ──────────────────────────────────────────────
     adapter = get_adapter(source)
@@ -210,6 +249,35 @@ async def _fetch_one(
 
     logger.info("Fetched %d items from '%s'", len(items), source.name)
     return items
+
+
+async def _attempt_fetch(
+    source: Source,
+    client: httpx.AsyncClient,
+) -> httpx.Response | FetchFailure | None:
+    """Try a single GET request, returning the response or a failure reason.
+
+    Returns:
+        - ``httpx.Response`` on success.
+        - ``FetchFailure`` on any non-403 error.
+        - ``None`` on HTTP 403 (signals the caller to retry).
+    """
+    try:
+        resp = await client.get(source.url)
+        resp.raise_for_status()
+        return resp
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 403:
+            return None  # signal retry
+        code = exc.response.status_code
+        logger.warning("HTTP %s fetching '%s'", code, source.name)
+        return FetchFailure(source=source.name, reason=f"HTTP {code}")
+    except httpx.TimeoutException:
+        logger.warning("Timeout fetching '%s'", source.name)
+        return FetchFailure(source=source.name, reason="Timeout")
+    except httpx.HTTPError as exc:
+        logger.warning("HTTP error fetching '%s': %s", source.name, exc)
+        return FetchFailure(source=source.name, reason=str(exc))
 
 
 def _loop_time() -> float:
