@@ -1,0 +1,64 @@
+"""Keyword-based content filter — drops entertainment/gossip items.
+
+Runs after fetch, before the topic filter. Removes items whose title or
+body contains any blocked keyword (case-insensitive substring match).
+
+The default keyword list targets Argentine entertainment content
+(horóscopo, Gran Hermano, farándula, etc.). Users can override via
+``SourceConfig.blocked_keywords`` or opt out entirely via
+``PipelineOptions.no_filter``.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from noticias.models.item import NewsItem
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_BLOCKED: list[str] = [
+    "horóscopo",
+    "astrología",
+    "Gran Hermano",
+    "Billboard",
+    "reality",
+    "farándula",
+    "chismes",
+    "escandalos",
+]
+
+
+def filter_content(
+    items: list[NewsItem],
+    blocked: list[str] | None = None,
+) -> list[NewsItem]:
+    """Drop items whose title or body contains any blocked keyword.
+
+    Args:
+        items: The list of news items to filter.
+        blocked: Keywords to block. ``None`` uses the module-level default
+            list (``_DEFAULT_BLOCKED``). ``[]`` passes all items through.
+
+    Returns:
+        A new list with matching items removed.
+    """
+    keywords = blocked if blocked is not None else _DEFAULT_BLOCKED
+    if not keywords:
+        return list(items)
+
+    keywords_lower = [k.lower() for k in keywords]
+    result: list[NewsItem] = []
+    dropped = 0
+
+    for item in items:
+        text = (item.title + " " + item.body).lower()
+        if not any(kw in text for kw in keywords_lower):
+            result.append(item)
+        else:
+            dropped += 1
+
+    if dropped:
+        logger.info("Content filter dropped %d item(s)", dropped)
+
+    return result
