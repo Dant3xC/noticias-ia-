@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,10 +27,21 @@ from noticias.pipeline.orchestrator import run_pipeline_async
 from noticias.persistence.snapshot import read_snapshot, write_snapshot
 from noticias.render.console import render_snapshot
 
+
+def _recent_pubdate(hours_ago: int = 0) -> str:
+    """Return an RFC-822 formatted pubDate for `hours_ago` hours before now.
+
+    Dynamic so the items stay within the default 24h window regardless of
+    when the tests are run.
+    """
+    dt = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+    return format_datetime(dt)
+
+
 # ── Test data ───────────────────────────────────────────────────────────────
 
 RSS_FEEDS: dict[str, str] = {
-    "pagina12": """<?xml version="1.0" encoding="UTF-8"?>
+    "pagina12": f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
 <channel>
   <title>Página12</title>
@@ -39,11 +51,11 @@ RSS_FEEDS: dict[str, str] = {
     <link>http://mock-rss.local/p12/economic-article-001</link>
     <description>Resumen de las medidas económicas anunciadas por el gobierno.</description>
     <content:encoded><![CDATA[gobierno anunció paquete medidas económicas reformas fiscales según fuentes oficiales]]></content:encoded>
-    <pubDate>Sun, 21 Jun 2026 10:00:00 +0000</pubDate>
+    <pubDate>{_recent_pubdate(2)}</pubDate>
   </item>
 </channel>
 </rss>""",
-    "lanacion": """<?xml version="1.0" encoding="UTF-8"?>
+    "lanacion": f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
 <channel>
   <title>La Nación</title>
@@ -53,11 +65,11 @@ RSS_FEEDS: dict[str, str] = {
     <link>http://mock-rss-different.local/ln/economic-report-002</link>
     <description>Resumen de las medidas económicas.</description>
     <content:encoded><![CDATA[gobierno anunció paquete medidas económicas reformas fiscales sector según fuentes oficiales]]></content:encoded>
-    <pubDate>Sun, 21 Jun 2026 10:30:00 +0000</pubDate>
+    <pubDate>{_recent_pubdate(1)}</pubDate>
   </item>
 </channel>
 </rss>""",
-    "clarin": """<?xml version="1.0" encoding="UTF-8"?>
+    "clarin": f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
 <channel>
   <title>Clarín</title>
@@ -67,7 +79,7 @@ RSS_FEEDS: dict[str, str] = {
     <link>http://mock-rss-alt.local/cl/economic-measures-003</link>
     <description>Resumen de las medidas.</description>
     <content:encoded><![CDATA[gobierno anunció paquete medidas económicas reformas fiscales estímulos según fuentes oficiales]]></content:encoded>
-    <pubDate>Sun, 21 Jun 2026 11:00:00 +0000</pubDate>
+    <pubDate>{_recent_pubdate(0)}</pubDate>
   </item>
 </channel>
 </rss>""",

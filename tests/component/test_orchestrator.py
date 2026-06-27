@@ -39,8 +39,10 @@ def _make_item_for_source(
         body = f"Article body content for {source} with enough words for tokenization purposes."
     if url is None:
         url = f"https://{source}.example.com/article"
-    # Stagger published_at so items have distinct timestamps
-    base_dt = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+    # Stagger published_at so items have distinct timestamps.
+    # Use a dynamic base (1 hour ago) so items stay within the default 24h window
+    # regardless of when the tests are run.
+    base_dt = datetime.now(timezone.utc) - timedelta(hours=1)
     dt = base_dt - timedelta(hours=published_at_delta_hours)
     return make_item(
         title=title,
