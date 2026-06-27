@@ -10,16 +10,18 @@ from __future__ import annotations
 from noticias.models.cluster import FamilyFormatPayload
 
 # Language: neutral Spanish (no voseo).
+# Updated for batch mode: the LLM processes ALL clusters in a single call
+# and returns a JSON object with a "clusters" array.
 SYSTEM_PROMPT = (
     "Eres un asistente que resume noticias de múltiples fuentes "
     "para un lector argentino. Reglas: "
-    "1) Escribe SIEMPRE en español, 2-3 oraciones. "
-    "2) Usa SOLO los hechos presentes en el payload. "
+    "1) Escribe SIEMPRE en español, 2-3 oraciones por cluster. "
+    "2) Usa SOLO los hechos presentes en los payloads. "
     "3) Si los hechos son insuficientes, indica "
     "'Información insuficiente'. "
-    "4) Devuelve JSON con esta forma: "
-    '{"cluster_id": "...", "summary": "...", '
-    '"highlights": ["...", "..."]}.'
+    "4) Devuelve JSON con esta forma EXACTA: "
+    '{"clusters": [{"cluster_id": "<id>", "summary": "...", '
+    '"highlights": ["...", "..."]}, ...]}.'
 )
 
 USER_PROMPT_TEMPLATE = (
@@ -59,6 +61,54 @@ def build_prompt(payload: FamilyFormatPayload) -> list[dict[str, str]]:
         sources=sources_str,
         common_facts=common_facts_str,
         divergences=divergences_str,
+    )
+
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def build_batch_prompt(
+    payloads: list[FamilyFormatPayload],
+) -> list[dict[str, str]]:
+    """Build a single mega-prompt covering ALL cluster family formats.
+
+    The user message contains every cluster's data tagged with its
+    ``cluster_id`` (= ``event_label``). The LLM is expected to return a
+    JSON object with a ``"clusters"`` array, each entry identified by
+    its ``cluster_id``.
+
+    Args:
+        payloads: One ``FamilyFormatPayload`` per cluster.
+
+    Returns:
+        ``[system, user]`` message list ready for ``litellm.acompletion``.
+    """
+    cluster_blocks: list[str] = []
+    for i, p in enumerate(payloads):
+        sources_str = ", ".join(
+            f"{s.name} ({s.lean})" for s in p.sources
+        )
+        common_facts_str = (
+            ", ".join(p.common_facts) if p.common_facts else "Ninguno"
+        )
+        divergences_str = (
+            ", ".join(p.divergences) if p.divergences else "Ninguna"
+        )
+        block = (
+            f"Cluster {i + 1} (id: \"{p.event_label}\", "
+            f"event_label: \"{p.event_label}\"):\n"
+            f"Sources: {sources_str}\n"
+            f"Common facts: {common_facts_str}\n"
+            f"Divergences: {divergences_str}"
+        )
+        cluster_blocks.append(block)
+
+    user_content = (
+        f"Aquí hay {len(payloads)} clusters. Para cada uno, "
+        f"escribe el resumen y 2-3 viñetas de highlights.\n\n"
+        + "\n\n".join(cluster_blocks)
     )
 
     return [

@@ -32,11 +32,9 @@ import asyncio
 import logging
 from datetime import timedelta
 
-import msgspec
-
 from noticias.llm.client import LLMClient
-from noticias.llm.parser import parse_llm_response, stub_summary
-from noticias.llm.prompt import build_prompt
+from noticias.llm.parser import parse_batch_llm_response, stub_summary
+from noticias.llm.prompt import build_batch_prompt
 from noticias.models.cluster import Cluster
 from noticias.models.source import Source, SourceConfig
 from noticias.pipeline.cluster import cluster as _cluster
@@ -132,50 +130,64 @@ async def run_pipeline_async(
         cluster.trust_label = trust_label.value
         cluster.trust_reason = trust_reason
 
-    # ── Stage 8: LLM summaries ─────────────────────────────────────────
-    for cluster, payload in zip(clusters, payloads):
-        payload_json = msgspec.json.encode(payload)
-        tokens = llm.estimate_tokens(
-            payload_json.decode("utf-8", errors="replace"),
-        )
+    # ── Stage 8: LLM summaries (batch — single call) ──────────────────
+    # Build one mega-prompt covering all clusters, then make a single LLM
+    # call. If the total prompt exceeds the token budget, ALL clusters get
+    # stub summaries (single warning log).
+    batch_prompt = build_batch_prompt(payloads)
+    user_content = batch_prompt[-1]["content"]
+    estimated_tokens = llm.estimate_tokens(user_content)
 
-        # Budget check
-        if llm.tokens_used + tokens > llm.token_budget:
-            logger.warning(
-                "Token budget exceeded: %d used + %d estimated > %d budget. "
-                "Skipping LLM for cluster '%s'",
-                llm.tokens_used,
-                tokens,
-                llm.token_budget,
-                cluster.event_label,
-            )
+    if llm.tokens_used + estimated_tokens > llm.token_budget:
+        logger.warning(
+            "Token budget exceeded: %d used + %d estimated > %d budget. "
+            "All clusters will use stub summaries.",
+            llm.tokens_used,
+            estimated_tokens,
+            llm.token_budget,
+        )
+        for cluster in clusters:
             stub = stub_summary(cluster)
             cluster.summary = stub.summary
             cluster.highlights = stub.highlights
-            continue
+        return clusters
 
-        # Build prompt and call LLM
-        prompt = build_prompt(payload)
-        response_content = await llm.complete(prompt, json_mode=True)
+    logger.info(
+        "Calling LLM batch — %d clusters, ~%d estimated tokens",
+        len(clusters),
+        estimated_tokens,
+    )
+    response_content = await llm.complete(batch_prompt, json_mode=True)
 
-        if response_content is None:
-            logger.warning(
-                "LLM returned no response for cluster '%s'. "
-                "Using stub summary.",
-                cluster.event_label,
-            )
+    if response_content is None:
+        logger.warning("LLM returned no response. Using stub summaries.")
+        for cluster in clusters:
             stub = stub_summary(cluster)
             cluster.summary = stub.summary
             cluster.highlights = stub.highlights
-            continue
+        return clusters
 
-        # Parse LLM response
-        llm_response = parse_llm_response(
-            response_content,
-            cluster_id=cluster.event_label,
-        )
-        cluster.summary = llm_response.summary
-        cluster.highlights = llm_response.highlights
+    # Parse the batch response and distribute summaries back to clusters.
+    results = parse_batch_llm_response(response_content)
+    matched = 0
+    for cluster in clusters:
+        cid = cluster.event_label
+        if cid in results:
+            cluster.summary = results[cid].summary
+            cluster.highlights = results[cid].highlights
+            matched += 1
+        else:
+            stub = stub_summary(cluster)
+            cluster.summary = stub.summary
+            cluster.highlights = stub.highlights
+
+    logger.info(
+        "Batch LLM: %d/%d clusters had matching IDs in response; "
+        "%d got stub fallback.",
+        matched,
+        len(clusters),
+        len(clusters) - matched,
+    )
 
     return clusters
 
