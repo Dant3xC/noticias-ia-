@@ -1,8 +1,14 @@
-"""Typer CLI application entry point.
+"""CLI application entry point for the noticias news aggregator.
 
-PR2: adds ``fuentes add``, ``fuentes remove``, and ``health`` subcommands
-on top of the PR1 foundation (``--version``, ``fuentes list``).
-PR4: adds ``resumen`` command and ``snapshot`` subcommands.
+Provides the following commands via Typer:
+
+- ``resumen`` (default) — run the full pipeline and persist + render.
+- ``fuentes list`` — list all configured news sources.
+- ``fuentes add`` — add a new RSS source.
+- ``fuentes remove`` — remove a source.
+- ``fuentes config topics`` — manage persistent topics of interest.
+- ``health`` — check HTTP reachability of sources.
+- ``snapshot list`` / ``snapshot show`` — browse saved daily snapshots.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from noticias.persistence.snapshot import (
     read_snapshot,
     write_snapshot,
 )
+from noticias.pipeline.options import PipelineOptions
 from noticias.pipeline.orchestrator import run_pipeline
 from noticias.pipeline.window import parse_since
 from noticias.render.console import render, render_snapshot
@@ -43,9 +50,9 @@ fuentes_app = typer.Typer(name="fuentes", help="Administrar las fuentes de notic
 app.add_typer(fuentes_app)
 
 
-def _version_callback(show_version: bool = False) -> None:
-    if show_version:
-        typer.echo(f"noticias-ia {__version__}")
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"noticias v{__version__}")
         raise typer.Exit()
 
 
@@ -109,6 +116,70 @@ def fuentes_remove_command(
     _fuentes_remove(registry, name)
 
 
+# ── fuentes config subcommand ──────────────────────────────────────────────
+
+config_app = typer.Typer(
+    name="config",
+    help="Configurar opciones de las fuentes.",
+)
+fuentes_app.add_typer(config_app)
+
+
+@config_app.command("topics", help="Configurar temas de interés.")
+def fuentes_config_topics_command(
+    topics_args: Annotated[
+        list[str],
+        typer.Argument(
+            help="Temas de interés (ej: economía fútbol política)",
+        ),
+    ],
+    clear: Annotated[
+        bool,
+        typer.Option(
+            "--clear",
+            help="Limpiar la lista de temas",
+        ),
+    ] = False,
+) -> None:
+    """Manage persistent topics of interest.
+
+    Usage:
+        noticias fuentes config topics \"economía\" \"fútbol\"
+        noticias fuentes config topics --clear
+        noticias fuentes config topics   (shows current topics)
+    """
+    console = Console()
+    registry = SourceRegistry.default()
+    config = registry._config  # type: ignore[attr-defined]
+
+    if clear:
+        config.topics = []
+        registry.save(Path.home() / ".config" / "noticias" / "config.json")
+        console.print("[green]Temas de interés limpiados.[/green]")
+        return
+
+    if not topics_args:
+        # Show current topics
+        if config.topics:
+            console.print("Temas de interés configurados:")
+            for t in config.topics:
+                console.print(f"  - {t}")
+        else:
+            console.print(
+                "[yellow]No hay temas configurados. "
+                "Use `noticias fuentes config topics TEMA1 TEMA2 ...` "
+                "para agregar.[/yellow]",
+            )
+        return
+
+    # Set topics
+    config.topics = list(topics_args)
+    registry.save(Path.home() / ".config" / "noticias" / "config.json")
+    console.print(
+        f"[green]Temas de interés actualizados: {', '.join(topics_args)}[/green]",
+    )
+
+
 # ── health ────────────────────────────────────────────────────────────────
 
 
@@ -146,6 +217,23 @@ def resumen_command(
         False,
         "--verbose",
         help="Activar logging DEBUG",
+    ),
+    topic: Annotated[
+        list[str],
+        typer.Option(
+            "--topic",
+            help="Tema de interés (repetible, ej: --topic economía --topic fútbol)",
+        ),
+    ] = [],
+    no_filter: bool = typer.Option(
+        False,
+        "--no-filter",
+        help="Saltar el filtro de contenido (no filtrar entretenimiento)",
+    ),
+    no_topics: bool = typer.Option(
+        False,
+        "--no-topics",
+        help="Saltar el filtro de temas de interés",
     ),
 ) -> None:
     """Run the full pipeline and persist + render the daily summary.
@@ -206,15 +294,52 @@ def resumen_command(
         )
         raise typer.Exit(code=0)
 
-    # ── Build LLM client ───────────────────────────────────────────────
+    # ── Load full config ────────────────────────────────────────────────
     config = SourceConfig()
+
+    # ── Build PipelineOptions ──────────────────────────────────────────
+    # CLI --topic overrides config.topics when explicitly provided.
+    pipeline_opts = PipelineOptions(
+        topics=list(topic) if topic else [],
+        no_filter=no_filter,
+        no_topics=no_topics,
+    )
+
+    # ── Build LLM client ───────────────────────────────────────────────
     if no_llm:
         llm: LLMClient = StubLLMClient()
     else:
         llm = LLMClient(model=config.model, token_budget=config.token_budget)
 
     # ── Run pipeline ───────────────────────────────────────────────────
-    clusters = run_pipeline(active_sources, window, llm, config)
+    clusters = run_pipeline(
+        active_sources,
+        window,
+        llm,
+        config,
+        options=pipeline_opts,
+    )
+
+    # ── Empty result messaging ─────────────────────────────────────────
+    if not clusters:
+        has_topics = bool(topic) or bool(config.topics)
+        if no_topics:
+            pass  # topics explicitly disabled
+        elif has_topics:
+            console.print(
+                "[yellow]No se encontraron noticias sobre los "
+                "temas configurados.[/yellow]",
+            )
+        elif not no_filter:
+            console.print(
+                "[yellow]No se encontraron noticias que coincidan "
+                "con los filtros configurados.[/yellow]",
+            )
+        else:
+            console.print(
+                "[yellow]No se encontraron noticias en la "
+                "ventana temporal configurada.[/yellow]",
+            )
 
     # ── Build snapshot ─────────────────────────────────────────────────
     local_date_str = datetime.now().strftime("%Y-%m-%d")
