@@ -27,7 +27,7 @@ from noticias.models.source import Lean, Source, SourceConfig
 from noticias.pipeline.fetch import FetchFailure, FetchResult
 from noticias.pipeline.options import PipelineOptions
 from noticias.pipeline.orchestrator import run_pipeline_async
-from tests.helpers import make_item
+from tests.helpers import make_batch_response, make_item
 
 
 # ── Test helpers ───────────────────────────────────────────────────────────

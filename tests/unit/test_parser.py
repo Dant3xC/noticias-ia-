@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from noticias.llm.parser import parse_llm_response, stub_summary
+from noticias.llm.parser import parse_batch_llm_response, parse_llm_response, stub_summary
 from noticias.models.cluster import LLMResponse
 from tests.helpers import make_cluster
 
@@ -75,6 +75,75 @@ class TestParseLLMResponse:
         raw = '["not", "a", "dict"]'
         result = parse_llm_response(raw, cluster_id="t")
         assert result.summary == "Resumen no disponible"
+
+
+class TestParseBatchLLMResponse:
+    """Tests for ``parse_batch_llm_response`` — batch JSON parser."""
+
+    def test_valid_batch_response(self) -> None:
+        raw = (
+            '{"clusters": ['
+            '{"cluster_id": "a", "summary": "Sum A", "highlights": ["H1"]},'
+            '{"cluster_id": "b", "summary": "Sum B", "highlights": ["H2", "H3"]}'
+            "]}"
+        )
+        result = parse_batch_llm_response(raw)
+        assert len(result) == 2
+        assert result["a"].summary == "Sum A"
+        assert result["a"].highlights == ["H1"]
+        assert result["b"].summary == "Sum B"
+        assert result["b"].highlights == ["H2", "H3"]
+
+    def test_invalid_json_returns_empty(self) -> None:
+        result = parse_batch_llm_response("not json at all")
+        assert result == {}
+
+    def test_missing_clusters_key_returns_empty(self) -> None:
+        raw = '{"summary": "single format", "highlights": []}'
+        result = parse_batch_llm_response(raw)
+        assert result == {}
+
+    def test_clusters_not_a_list_returns_empty(self) -> None:
+        raw = '{"clusters": "not_a_list"}'
+        result = parse_batch_llm_response(raw)
+        assert result == {}
+
+    def test_skips_entries_without_cluster_id(self) -> None:
+        raw = (
+            '{"clusters": ['
+            '{"summary": "no id"},'
+            '{"cluster_id": "ok", "summary": "valid", "highlights": ["H"]}'
+            "]}"
+        )
+        result = parse_batch_llm_response(raw)
+        assert "ok" in result
+        assert len(result) == 1
+
+    def test_json_extracted_from_prose(self) -> None:
+        raw = (
+            "Here's the summary:\n"
+            '{"clusters": [{"cluster_id": "c", "summary": "S", "highlights": []}]}\n'
+            "Hope this helps."
+        )
+        result = parse_batch_llm_response(raw)
+        assert result["c"].summary == "S"
+
+    def test_handles_empty_clusters_list(self) -> None:
+        raw = '{"clusters": []}'
+        result = parse_batch_llm_response(raw)
+        assert result == {}
+
+    def test_missing_fields_use_defaults(self) -> None:
+        raw = (
+            '{"clusters": ['
+            '{"cluster_id": "x"},'
+            '{"cluster_id": "y", "highlights": null}'
+            "]}"
+        )
+        result = parse_batch_llm_response(raw)
+        assert result["x"].summary == "Resumen no disponible"
+        assert result["x"].highlights == []
+        assert result["y"].highlights == []
 
 
 class TestStubSummary:

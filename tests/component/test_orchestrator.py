@@ -21,7 +21,7 @@ from noticias.llm.client import LLMClient
 from noticias.models.source import Lean, Source, SourceConfig
 from noticias.pipeline.fetch import FetchFailure, FetchResult
 from noticias.pipeline.orchestrator import run_pipeline_async
-from tests.helpers import make_item
+from tests.helpers import make_batch_response, make_item
 
 
 def _make_item_for_source(
@@ -151,11 +151,23 @@ async def test_pipeline_with_mocked_llm_returns_clusters_with_summaries() -> Non
             failures=[],
         )
 
-        # Mock LLM to return valid JSON summaries
-        mock_llm.return_value = MockLLMResponse(
-            '{"summary": "Resumen de la noticia.", '
-            '"highlights": ["Punto 1", "Punto 2", "Punto 3"]}',
-        )
+        # Build batch response matching the 3 real cluster event_labels.
+        batch_json = make_batch_response([
+            (["Corte Suprema argentina falla libertad expresion en fallo historico",
+              "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+              "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+             "Resumen de la noticia.",
+             ["Punto 1", "Punto 2", "Punto 3"]),
+            (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+              "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+             "Resumen de la noticia.",
+             ["Punto 1", "Punto 2", "Punto 3"]),
+            (["Resultados deportivos del fin de semana en Argentina futbol"],
+             "Resumen de la noticia.",
+             ["Punto 1", "Punto 2", "Punto 3"]),
+        ])
+
+        mock_llm.return_value = MockLLMResponse(batch_json)
 
         llm_client = LLMClient(
             models=["groq/llama-3.1-8b-instant"],
@@ -174,8 +186,8 @@ async def test_pipeline_with_mocked_llm_returns_clusters_with_summaries() -> Non
     # Should have 3 clusters
     assert len(clusters) == 3, f"Expected 3 clusters, got {len(clusters)}"
 
-    # Cluster 1: 3 sources, 3 leans
-    cluster1 = clusters[0]  # largest cluster first (sorted by size)
+    # Cluster 1: 3 sources, 3 leans (largest cluster first, sorted by size)
+    cluster1 = clusters[0]  # Corte Suprema cluster
     # Trust label depends on divergence ratio of the actual content.
     # With the test bodies above it should be alta or media.
     assert cluster1.trust_label in ("alta", "media"), (
@@ -193,8 +205,8 @@ async def test_pipeline_with_mocked_llm_returns_clusters_with_summaries() -> Non
     for c in baja_clusters:
         assert len(c.summary) > 0  # stub or LLM summary
 
-    # LLM was called at least once
-    mock_llm.assert_called()
+    # LLM was called exactly ONCE (batch mode)
+    mock_llm.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -222,10 +234,11 @@ async def test_single_source_gets_baja_and_stub() -> None:
         ) as mock_llm,
     ):
         mock_fetch.return_value = FetchResult(items=items, failures=[])
-        # LLM responds OK
-        mock_llm.return_value = MockLLMResponse(
-            '{"summary": "LLM summary.", "highlights": []}',
-        )
+        # Batch response matching the single cluster's event_label.
+        batch_json = make_batch_response([
+            (["Noticia única"], "LLM summary.", []),
+        ])
+        mock_llm.return_value = MockLLMResponse(batch_json)
 
         llm_client = LLMClient(token_budget=5000)
         llm_client._keys["groq"] = "fake_key"
@@ -431,9 +444,19 @@ async def test_tokens_used_not_double_counted() -> None:
         ) as mock_llm,
     ):
         mock_fetch.return_value = FetchResult(items=items, failures=[])
-        mock_llm.return_value = MockLLMResponse(
-            '{"summary": "OK.", "highlights": []}',
-        )
+        # Batch response matching all 3 clusters (same summary for all).
+        batch_json = make_batch_response([
+            (["Corte Suprema argentina falla libertad expresion en fallo historico",
+              "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+              "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+             "OK.", []),
+            (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+              "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+             "OK.", []),
+            (["Resultados deportivos del fin de semana en Argentina futbol"],
+             "OK.", []),
+        ])
+        mock_llm.return_value = MockLLMResponse(batch_json)
 
         llm_client = LLMClient(token_budget=5000)
         llm_client._keys["groq"] = "fake_key"
@@ -452,9 +475,9 @@ async def test_tokens_used_not_double_counted() -> None:
             f"Expected LLM summary 'OK.', got stub: '{cluster.summary}'"
         )
 
-    # Each LLM call adds ~80-90 tokens (small payload + system prompt).
-    # 3 clusters: ~250 tokens. With double-counting: ~980.
-    # Threshold 500 catches the bug while allowing normal operation.
+    # A single batch call adds the combined prompt's estimated tokens.
+    # The batch user content is ~800-1200 chars → ~200-300 tokens.
+    # This is well under 500.
     assert llm_client.tokens_used < 500, (
         f"tokens_used = {llm_client.tokens_used} >= 500; "
         f"this suggests the double-counting bug is back"
@@ -481,10 +504,18 @@ async def test_trust_and_summary_labels_are_set() -> None:
             items=_SAMPLE_CLUSTER_ITEMS,
             failures=[],
         )
-        mock_llm.return_value = MockLLMResponse(
-            '{"summary": "Resumen de prueba.", '
-            '"highlights": ["Detalle 1", "Detalle 2"]}',
-        )
+        batch_json = make_batch_response([
+            (["Corte Suprema argentina falla libertad expresion en fallo historico",
+              "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+              "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+             "Resumen de prueba.", ["Detalle 1", "Detalle 2"]),
+            (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+              "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+             "Resumen de prueba.", ["Detalle 1", "Detalle 2"]),
+            (["Resultados deportivos del fin de semana en Argentina futbol"],
+             "Resumen de prueba.", ["Detalle 1", "Detalle 2"]),
+        ])
+        mock_llm.return_value = MockLLMResponse(batch_json)
 
         llm_client = LLMClient(token_budget=5000)
         llm_client._keys["groq"] = "fake_key"
@@ -513,3 +544,158 @@ async def test_trust_and_summary_labels_are_set() -> None:
 
         # Event label set
         assert len(cluster.event_label) > 0
+
+
+# ── Batch LLM tests ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_llm_called_exactly_once() -> None:
+    """Batch mode: the LLM is called exactly ONCE regardless of cluster count."""
+    config = _make_config()
+    sources = config.sources
+
+    with (
+        patch(
+            "noticias.pipeline.orchestrator.fetch_all_sources",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "noticias.llm.client.litellm.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_llm,
+    ):
+        mock_fetch.return_value = FetchResult(
+            items=_SAMPLE_CLUSTER_ITEMS,
+            failures=[],
+        )
+
+        batch_json = make_batch_response([
+            (["Corte Suprema argentina falla libertad expresion en fallo historico",
+              "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+              "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+             "Summary 1", ["H1", "H2", "H3"]),
+            (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+              "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+             "Summary 2", ["H1"]),
+            (["Resultados deportivos del fin de semana en Argentina futbol"],
+             "Summary 3", []),
+        ])
+        mock_llm.return_value = MockLLMResponse(batch_json)
+
+        llm_client = LLMClient(token_budget=5000)
+        llm_client._keys["groq"] = "fake_key"
+
+        clusters = await run_pipeline_async(
+            sources=sources,
+            window=timedelta(hours=24),
+            llm=llm_client,
+            config=config,
+        )
+
+    # Exactly 1 LLM call (not N calls)
+    mock_llm.assert_called_once()
+
+    # Each cluster got the correct summary from the batch response.
+    assert len(clusters) == 3
+    # The largest cluster (3 items, Corte Suprema) got Summary 1
+    assert clusters[0].summary == "Summary 1"
+    assert len(clusters[0].highlights) == 3
+
+
+@pytest.mark.asyncio
+async def test_batch_llm_fallback_on_missing_cluster_id() -> None:
+    """When a cluster_id is missing from the batch response, that cluster gets stub."""
+    config = _make_config()
+    sources = config.sources
+
+    with (
+        patch(
+            "noticias.pipeline.orchestrator.fetch_all_sources",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "noticias.llm.client.litellm.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_llm,
+    ):
+        mock_fetch.return_value = FetchResult(
+            items=_SAMPLE_CLUSTER_ITEMS,
+            failures=[],
+        )
+
+        # Only include cluster 1 and 3 in the response (skip cluster 2).
+        batch_json = make_batch_response([
+            (["Corte Suprema argentina falla libertad expresion en fallo historico",
+              "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+              "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+             "Real summary", ["H1"]),
+            (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+              "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+             "Real summary 2", []),
+        ])
+        mock_llm.return_value = MockLLMResponse(batch_json)
+
+        llm_client = LLMClient(token_budget=5000)
+        llm_client._keys["groq"] = "fake_key"
+
+        clusters = await run_pipeline_async(
+            sources=sources,
+            window=timedelta(hours=24),
+            llm=llm_client,
+            config=config,
+        )
+
+    # 3 clusters, but only 2 matched in the response
+    assert len(clusters) == 3
+    # Find the single-source cluster (deportes) — it should have a stub
+    single_source = [c for c in clusters if len(c.items) == 1][0]
+    assert "sin llm" in single_source.summary.lower() or "sin LLM" in single_source.summary
+
+    # The matched clusters have real summaries
+    multi_source = [c for c in clusters if len(c.items) > 1]
+    for c in multi_source:
+        assert "Real summary" in c.summary
+
+
+@pytest.mark.asyncio
+async def test_batch_llm_budget_exceeded_all_stubs() -> None:
+    """When the batch prompt exceeds the budget, ALL clusters get stubs (no LLM call)."""
+    config = _make_config()
+    sources = config.sources
+
+    with (
+        patch(
+            "noticias.pipeline.orchestrator.fetch_all_sources",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "noticias.llm.client.litellm.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_llm,
+    ):
+        mock_fetch.return_value = FetchResult(
+            items=_SAMPLE_CLUSTER_ITEMS,
+            failures=[],
+        )
+        mock_llm.return_value = MockLLMResponse(
+            '{"not": "used"}',  # should never be invoked
+        )
+
+        # Budget=1 — any batch prompt exceeds this → all stubs
+        llm_client = LLMClient(token_budget=1)
+
+        clusters = await run_pipeline_async(
+            sources=sources,
+            window=timedelta(hours=24),
+            llm=llm_client,
+            config=config,
+        )
+
+    # ALL clusters got stub summaries (LLM was never called)
+    assert len(clusters) == 3
+    for cluster in clusters:
+        assert "sin llm" in cluster.summary.lower() or "sin LLM" in cluster.summary
+
+    # LLM was NOT called (budget guard skipped it)
+    mock_llm.assert_not_called()

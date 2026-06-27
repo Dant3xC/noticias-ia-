@@ -9,7 +9,7 @@ Covers:
 
 from __future__ import annotations
 
-from noticias.llm.prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, build_prompt
+from noticias.llm.prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, build_batch_prompt, build_prompt
 from noticias.models.cluster import FamilyFormatPayload
 
 
@@ -110,3 +110,52 @@ class TestBuildPrompt:
         assert "{sources}" in USER_PROMPT_TEMPLATE
         assert "{common_facts}" in USER_PROMPT_TEMPLATE
         assert "{divergences}" in USER_PROMPT_TEMPLATE
+
+
+class TestBuildBatchPrompt:
+    """Tests for ``build_batch_prompt`` — the multi-cluster mega-prompt."""
+
+    def test_returns_two_messages(self) -> None:
+        payloads = [_make_payload(event_label="A"), _make_payload(event_label="B")]
+        messages = build_batch_prompt(payloads)
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_user_content_contains_all_clusters(self) -> None:
+        payloads = [
+            _make_payload(event_label="Cluster Alpha"),
+            _make_payload(event_label="Cluster Beta"),
+        ]
+        messages = build_batch_prompt(payloads)
+        user_content = messages[1]["content"]
+        assert "Cluster Alpha" in user_content
+        assert "Cluster Beta" in user_content
+        assert "Aquí hay 2 clusters" in user_content
+
+    def test_each_cluster_block_has_sources_facts_divergences(self) -> None:
+        payloads = [
+            _make_payload(
+                event_label="Test",
+                sources=[("src1", "left"), ("src2", "center")],
+                common_facts=["fact_a"],
+                divergences=["div_x"],
+            ),
+        ]
+        messages = build_batch_prompt(payloads)
+        user_content = messages[1]["content"]
+        assert "sources" in user_content.lower() or "src1" in user_content
+        assert "fact_a" in user_content
+        assert "div_x" in user_content
+
+    def test_system_prompt_mentions_batch_format(self) -> None:
+        assert "clusters" in SYSTEM_PROMPT
+        assert "cluster_id" in SYSTEM_PROMPT
+        assert "summary" in SYSTEM_PROMPT
+
+    def test_single_cluster_still_works(self) -> None:
+        payloads = [_make_payload(event_label="Solo")]
+        messages = build_batch_prompt(payloads)
+        user_content = messages[1]["content"]
+        assert "Aquí hay 1 cluster" in user_content
+        assert "Solo" in user_content

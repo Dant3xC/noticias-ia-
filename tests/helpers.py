@@ -6,10 +6,11 @@ Import them explicitly in test files.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
-from noticias.models.cluster import Cluster
+from noticias.models.cluster import Cluster, LLMResponse
 from noticias.models.item import NewsItem
 
 # Sentinel to distinguish "not provided" from "explicitly None".
@@ -39,6 +40,33 @@ def make_item(
         body=body,
         published_at=published_at,
     )
+
+
+def make_batch_response(
+    clusters: list[tuple[list[str], str, list[str]]],
+) -> str:
+    """Build a batch LLM response JSON string.
+
+    Args:
+        clusters: Each tuple is ``(titles, summary, highlights)`` where
+            ``titles`` are the NewsItem titles of the cluster (used to
+            compute the event_label), ``summary`` is the expected summary
+            text, and ``highlights`` is the expected highlights list.
+
+    Returns:
+        A JSON string in batch format ready for ``parse_batch_llm_response``.
+    """
+    from noticias.pipeline.event_label import event_label
+
+    entries: list[dict[str, Any]] = []
+    for titles, summary, highlights in clusters:
+        label = event_label(titles)
+        entries.append({
+            "cluster_id": label,
+            "summary": summary,
+            "highlights": highlights,
+        })
+    return json.dumps({"clusters": entries})
 
 
 def make_cluster(
