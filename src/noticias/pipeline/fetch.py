@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +24,22 @@ from noticias.models.source import Source
 from noticias.sources.adapters import get_adapter, normalize
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_USER_AGENT: str = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+def _resolve_user_agent() -> str:
+    """Return the effective User-Agent string.
+
+    Reads ``NOTICIAS_USER_AGENT`` from the environment. Falls back to
+    ``_DEFAULT_USER_AGENT`` when the variable is unset or empty.
+    """
+    ua = os.environ.get("NOTICIAS_USER_AGENT")
+    return ua if ua else _DEFAULT_USER_AGENT
 
 
 @dataclass
@@ -71,9 +88,11 @@ async def fetch_all_sources(
         max_keepalive_connections=max_concurrent,
         max_connections=max_concurrent,
     )
+    ua = _resolve_user_agent()
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout_s),
         limits=limits,
+        headers={"User-Agent": ua},
     ) as client:
         tasks = [
             _fetch_one(source, client, semaphore, rate_locks, last_call, rate_limit_s)
