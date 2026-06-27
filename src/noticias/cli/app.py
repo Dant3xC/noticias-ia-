@@ -13,6 +13,19 @@ Provides the following commands via Typer:
 
 from __future__ import annotations
 
+# Load .env BEFORE any module that reads env vars (e.g. LLMClient).
+# This is also done in __main__.py, but that file is bypassed when running
+# the installed `noticias` entry point (which goes straight to `app()` via
+# pyproject.toml's [project.scripts]). Loading here ensures the env is
+# populated regardless of entry point.
+from pathlib import Path as _Path  # noqa: E402
+
+from dotenv import load_dotenv as _load_dotenv  # noqa: E402
+
+from noticias._project_root import project_root as _pr  # noqa: E402
+
+_load_dotenv(_pr() / ".env")
+
 import logging
 from datetime import datetime
 from pathlib import Path

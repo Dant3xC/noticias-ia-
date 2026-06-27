@@ -1,18 +1,20 @@
 """Default source definitions for the MVP.
 
-6 Argentinian RSS sources with verified URLs. The mix is designed to
+5 Argentinian RSS sources with verified URLs. The mix is designed to
 maximize ideological diversity so the cross-source contrast algorithm
 produces meaningful trust labels: when openly partisan outlets from
 opposite ends of the spectrum agree on a fact, the cross-ideology
 agreement is the strongest possible truth signal.
 
-Lean distribution:
-- left:        laizquierdadiario (1)
+NOTE: laizquierdariowith (left) was removed from defaults because its
+public RSS feed is currently unstable (returns 301 redirects / 404).
+To re-add once a stable feed URL is found, run:
+    noticias fuentes add laizquierdariario <url-real> --lean left
+
+Lean distribution (after laizquierdariowith removal):
+- left:        0 (was 2; add laizquierdariowith back manually when ready)
 - center:      infobae, ambito             (2)
 - right:       lanacion, clarin, derechadiario (3)
-
-pagina12 was removed because its RSS feed was permanently taken down
-(all ``/rss/*`` variants return 404 as of 2026-06).
 """
 
 from noticias.models.source import Lean, Source
@@ -22,12 +24,6 @@ from noticias.models.source import Lean, Source
 # If a feed breaks in the future, remove the source and add a working
 # replacement via `noticias fuentes add <name> <url> --lean <lean>`.
 DEFAULT_SOURCES: list[Source] = [
-    # --- left ---
-    Source(
-        name="laizquierdadiario",
-        url="http://www.laizquierdadiario.com/spip.php?page=backend_portada",
-        lean=Lean.LEFT,
-    ),
     # --- center ---
     Source(
         name="infobae",
