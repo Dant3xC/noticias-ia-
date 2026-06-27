@@ -10,6 +10,7 @@ import logging
 from typing import Sequence
 
 import numpy as np
+from fastembed import TextEmbedding  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,13 @@ class Embedder:
         self._model = None
 
     def _load(self) -> None:
-        """Lazy-load the fastembed TextEmbedding model (called on first embed)."""
-        if self._model is None:
-            from fastembed import TextEmbedding  # type: ignore[import-untyped]
+        """Lazy-load the fastembed TextEmbedding model (called on first embed).
 
+        The import of ``TextEmbedding`` happens at module load time — what is
+        lazy here is the **model instantiation**, which downloads ~130 MB of
+        weights on first use.
+        """
+        if self._model is None:
             self._model = TextEmbedding(model_name=self._model_name)
 
     def embed(self, texts: Sequence[str]) -> np.ndarray | None:

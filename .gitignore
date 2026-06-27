@@ -3,6 +3,11 @@
 .atl/**
 .skill-registry.cache.json
 
+# User-side AI tool artifacts (Continue.dev, etc.)
+.continue
+.agents
+skills-lock.json
+
 # Env / secrets
 .env
 
