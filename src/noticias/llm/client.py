@@ -40,19 +40,24 @@ class LLMClient:
     """
 
     DEFAULT_MODELS: list[str] = [
-        "groq/llama-3.1-8b-instant",
+        "groq/llama-3.3-70b-versatile",
         "gemini/gemini-2.0-flash-exp",
         "gpt-4o-mini",
     ]
 
     def __init__(
         self,
+        model: str | None = None,
         models: list[str] | None = None,
         token_budget: int = 5000,
     ) -> None:
         """Initialise the LLM client.
 
         Args:
+            model: An optional primary model string. When provided it is
+                prepended to ``models`` (or ``DEFAULT_MODELS``), and
+                duplicates are removed so that the same model is not
+                tried twice.
             models: Ordered list of LiteLLM model strings. Defaults to
                 ``DEFAULT_MODELS``.
             token_budget: Maximum cumulative tokens per run (default 5000).
@@ -63,7 +68,10 @@ class LLMClient:
         if token_budget < 0:
             raise ValueError(f"token_budget must be non-negative, got {token_budget}")
 
-        self.models = models or list(self.DEFAULT_MODELS)
+        resolved = list(models or self.DEFAULT_MODELS)
+        if model is not None and model not in resolved:
+            resolved.insert(0, model)
+        self.models = resolved
         self.token_budget: int = token_budget
         self.tokens_used: int = 0
 

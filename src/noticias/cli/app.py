@@ -211,7 +211,7 @@ def resumen_command(
     if no_llm:
         llm: LLMClient = StubLLMClient()
     else:
-        llm = LLMClient(token_budget=config.token_budget)
+        llm = LLMClient(model=config.model, token_budget=config.token_budget)
 
     # ── Run pipeline ───────────────────────────────────────────────────
     clusters = run_pipeline(active_sources, window, llm, config)
