@@ -62,11 +62,11 @@ class TestFilterContent:
         assert result[0].title == "Economía argentina crece"
 
     def test_case_insensitive(self) -> None:
-        """Keywords match regardless of case."""
+        """Keywords match regardless of case (including accented chars)."""
         items = [
-            make_item(title="HOROSCOPO de hoy"),
-            make_item(title="horoscopo de la semana"),
-            make_item(title="Horoscopo semanal"),
+            make_item(title="HORÓSCOPO de hoy"),
+            make_item(title="horóscopo de la semana"),
+            make_item(title="Horóscopo semanal"),
         ]
         result = filter_content(items, blocked=["horóscopo"])
         assert result == []
