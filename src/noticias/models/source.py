@@ -29,9 +29,11 @@ class SourceConfig(msgspec.Struct):
 
     version: int = 1
     sources: list[Source] = []
-    model: str = "groq/llama-3.1-8b-instant"
+    topics: list[str] = []
+    blocked_keywords: list[str] | None = None
+    model: str = "groq/llama-3.3-70b-versatile"
     fetch_timeout_s: float = 15.0
     default_window_h: int = 24
-    token_budget: int = 5000
+    token_budget: int = 8000
     max_concurrent_sources: int = 5
     rate_limit_s: int = 5
