@@ -28,8 +28,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_USER_AGENT: str = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
+    "Chrome/131.0.0.0 Safari/537.36"
 )
+
+
+_DEFAULT_ACCEPT: str = "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8"
+_DEFAULT_ACCEPT_LANGUAGE: str = "es-AR,es;q=0.9,en;q=0.5"
 
 
 def _resolve_user_agent() -> str:
@@ -89,10 +93,15 @@ async def fetch_all_sources(
         max_connections=max_concurrent,
     )
     ua = _resolve_user_agent()
+    headers = {
+        "User-Agent": ua,
+        "Accept": _DEFAULT_ACCEPT,
+        "Accept-Language": _DEFAULT_ACCEPT_LANGUAGE,
+    }
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout_s),
         limits=limits,
-        headers={"User-Agent": ua},
+        headers=headers,
     ) as client:
         tasks = [
             _fetch_one(source, client, semaphore, rate_locks, last_call, rate_limit_s)
