@@ -95,6 +95,38 @@ class TestLLMClientTokenEstimation:
         assert LLMClient.estimate_tokens(text) == len(text) // 4
 
 
+class TestLLMClientEstimateTokensBytes4:
+    """estimate_tokens uses len(text.encode('utf-8')) // 4.
+
+    This accounts for the fact that accented Spanish characters use 2 bytes
+    in UTF-8, making the char/4 rule undercount tokens for accented text.
+    """
+
+    def test_empty_string_zero(self) -> None:
+        assert LLMClient.estimate_tokens("") == 0
+
+    def test_ascii_same_as_before(self) -> None:
+        text = "Hello, world!"
+        assert LLMClient.estimate_tokens(text) == len(text.encode("utf-8")) // 4
+
+    def test_accented_spanish_uses_utf8_bytes(self) -> None:
+        """Accented chars estimate uses UTF-8 byte length, not char length."""
+        text = "éste es un texto con acéntos"
+        expected = len(text.encode("utf-8")) // 4
+        assert LLMClient.estimate_tokens(text) == expected, (
+            f"Expected {expected} (bytes/4), got {LLMClient.estimate_tokens(text)}"
+        )
+        # UTF-8 encoding adds bytes for accented chars
+        assert len(text.encode("utf-8")) > len(text)
+
+    def test_emoji_four_bytes(self) -> None:
+        """Emoji (🚀) encodes as 4 bytes → bytes/4 = 1."""
+        text = "🚀"
+        expected = len(text.encode("utf-8")) // 4
+        assert LLMClient.estimate_tokens(text) == expected
+        assert expected == 1
+
+
 class TestLLMClientBudget:
     """budget_remaining and tokens_used tracking."""
 

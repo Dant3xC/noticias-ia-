@@ -154,15 +154,20 @@ class LLMClient:
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
-        """Rough token estimate using char/4 rule.
+        """Rough token estimate using UTF-8 bytes/4 rule.
+
+        Uses UTF-8 encoded byte length instead of character count so that
+        accented Spanish characters (which use 2 bytes each) are estimated
+        more accurately. Equivalent to ~4 chars/token for ASCII, ~2
+        chars/token for heavily accented text.
 
         Args:
             text: The input text to estimate.
 
         Returns:
-            Estimated token count (``len(text) // 4``).
+            Estimated token count (``len(text.encode(\"utf-8\")) // 4``).
         """
-        return len(text) // 4
+        return len(text.encode("utf-8")) // 4
 
     @property
     def budget_remaining(self) -> int:

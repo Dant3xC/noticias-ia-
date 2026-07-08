@@ -308,7 +308,7 @@ class TestResumenRealLlm:
         llm = args[2]  # third positional arg is the LLM client
         from noticias.llm.client import LLMClient
         assert isinstance(llm, LLMClient)
-        assert llm.token_budget == 8000
+        assert llm.token_budget == 9000
 
     def test_verbose_logging(self, sample_clusters: list[Cluster]) -> None:
         """``--verbose`` enables DEBUG logging."""

@@ -32,16 +32,16 @@ import asyncio
 import logging
 from datetime import timedelta
 
-from noticias.llm.client import LLMClient
+from noticias.llm.client import LLMClient, TokenBudgetExceeded
 from noticias.llm.parser import parse_batch_llm_response, stub_summary
-from noticias.llm.prompt import build_batch_prompt
-from noticias.models.cluster import Cluster
+from noticias.llm.prompt import build_batch_prompt, build_cluster_block
+from noticias.models.cluster import Cluster, FamilyFormatPayload
 from noticias.models.source import Source, SourceConfig
 from noticias.pipeline.cluster import cluster as _cluster
 from noticias.pipeline.content_filter import filter_content
 from noticias.pipeline.dedup import dedup as _dedup
 from noticias.pipeline.embed import Embedder
-from noticias.pipeline.family import build_family_format
+from noticias.pipeline.family import build_family_format, truncate_payload
 from noticias.pipeline.fetch import fetch_all_sources
 from noticias.pipeline.options import PipelineOptions
 from noticias.pipeline.topic_filter import filter_topics
@@ -127,52 +127,80 @@ async def run_pipeline_async(
     payloads: list = []
     for cluster in clusters:
         payload = build_family_format(cluster)
-        payloads.append(payload)
+        payloads.append(truncate_payload(payload))
         trust_label, trust_reason = compute_trust(cluster)
         cluster.trust_label = trust_label.value
         cluster.trust_reason = trust_reason
 
-    # ── Stage 8: LLM summaries (batch — single call) ──────────────────
-    # Build one mega-prompt covering all clusters, then make a single LLM
-    # call. If the total prompt exceeds the token budget, ALL clusters get
-    # stub summaries (single warning log).
-    batch_prompt = build_batch_prompt(payloads)
-    user_content = batch_prompt[-1]["content"]
-    estimated_tokens = llm.estimate_tokens(user_content)
+    # ── Stage 8: LLM summaries (per-cluster greedy budget) ────────────
+    # Estimate tokens per cluster, sort largest-first, greedily fill
+    # sub-batch. Clusters that don't fit the remaining budget get a stub
+    # summary immediately. The happy path (all fit) stays a single call.
+    per_cluster_estimates = [
+        (cluster, payload, llm.estimate_tokens(build_cluster_block(payload)))
+        for cluster, payload in zip(clusters, payloads)
+    ]
+    per_cluster_estimates.sort(key=lambda x: x[2], reverse=True)
 
-    if llm.tokens_used + estimated_tokens > llm.token_budget:
+    sub_batch: list[tuple[Cluster, FamilyFormatPayload, int]] = []
+    remaining_budget = llm.token_budget - llm.tokens_used
+
+    for cluster, payload, estimate in per_cluster_estimates:
+        if estimate <= remaining_budget:
+            sub_batch.append((cluster, payload, estimate))
+            remaining_budget -= estimate
+        else:
+            stub = stub_summary(cluster)
+            cluster.summary = stub.summary
+            cluster.highlights = stub.highlights
+
+    if not sub_batch:
         logger.warning(
-            "Token budget exceeded: %d used + %d estimated > %d budget. "
-            "All clusters will use stub summaries.",
+            "Token budget too small for any cluster "
+            "(%d used + min estimate > %d budget). All got stubs.",
             llm.tokens_used,
-            estimated_tokens,
             llm.token_budget,
         )
-        for cluster in clusters:
+        return clusters
+
+    sub_batch_clusters = [c for c, _, _ in sub_batch]
+    sub_batch_payloads = [p for _, p, _ in sub_batch]
+    sub_batch_total = sum(est for _, _, est in sub_batch)
+    batch_prompt = build_batch_prompt(sub_batch_payloads)
+
+    logger.info(
+        "Calling LLM batch — %d/%d clusters, ~%d total estimated tokens",
+        len(sub_batch_clusters),
+        len(clusters),
+        sub_batch_total,
+    )
+    try:
+        response_content = await llm.complete(batch_prompt, json_mode=True)
+    except TokenBudgetExceeded:
+        logger.warning(
+            "Sub-batch prompt exceeded token budget (%d used + estimate > %d). "
+            "All sub-batch clusters will use stub summaries.",
+            llm.tokens_used,
+            llm.token_budget,
+        )
+        for cluster, _, _ in sub_batch:
             stub = stub_summary(cluster)
             cluster.summary = stub.summary
             cluster.highlights = stub.highlights
         return clusters
-
-    logger.info(
-        "Calling LLM batch — %d clusters, ~%d estimated tokens",
-        len(clusters),
-        estimated_tokens,
-    )
-    response_content = await llm.complete(batch_prompt, json_mode=True)
 
     if response_content is None:
         logger.warning("LLM returned no response. Using stub summaries.")
-        for cluster in clusters:
+        for cluster, _, _ in sub_batch:
             stub = stub_summary(cluster)
             cluster.summary = stub.summary
             cluster.highlights = stub.highlights
         return clusters
 
-    # Parse the batch response and distribute summaries back to clusters.
+    # Parse the batch response and distribute summaries to sub-batch clusters.
     results = parse_batch_llm_response(response_content)
     matched = 0
-    for cluster in clusters:
+    for cluster, _, _ in sub_batch:
         cid = cluster.event_label
         if cid in results:
             cluster.summary = results[cid].summary
@@ -184,11 +212,11 @@ async def run_pipeline_async(
             cluster.highlights = stub.highlights
 
     logger.info(
-        "Batch LLM: %d/%d clusters had matching IDs in response; "
+        "Batch LLM: %d/%d sub-batch clusters had matching IDs in response; "
         "%d got stub fallback.",
         matched,
-        len(clusters),
-        len(clusters) - matched,
+        len(sub_batch_clusters),
+        len(sub_batch_clusters) - matched,
     )
 
     return clusters
