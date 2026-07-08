@@ -12,6 +12,10 @@ Covers:
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import numpy as np
+
 from noticias.pipeline.cluster import cluster
 from tests.helpers import make_item
 
@@ -19,6 +23,28 @@ from tests.helpers import make_item
 class TestCluster:
     def test_empty_list(self) -> None:
         assert cluster([]) == []
+
+    def test_embedder_called_once_with_all_titles(self) -> None:
+        """Embedder.embed() is called exactly once with the full title list."""
+        items = [
+            make_item("Climate summit begins in Rio", source="a", url="https://a.com/1"),
+            make_item("World leaders meet for climate summit in Rio", source="b", url="https://b.com/2"),
+            make_item("Sports results from the weekend", source="c", url="https://c.com/3"),
+        ]
+        mock_embedder = MagicMock()
+        # Return fake embeddings: one per item, same dimension.
+        mock_embedder.embed.return_value = np.array([
+            [0.1, 0.2, 0.3],
+            [0.1, 0.2, 0.3],
+            [0.9, 0.8, 0.7],
+        ])
+
+        cluster(items, embedder=mock_embedder)
+
+        # embed must be called exactly once with ALL titles (not per-item).
+        mock_embedder.embed.assert_called_once_with(
+            [item.title for item in items],
+        )
 
     def test_single_item_single_cluster(self) -> None:
         items = [make_item("Solo story")]
