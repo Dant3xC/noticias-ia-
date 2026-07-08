@@ -14,10 +14,65 @@ Covers:
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from noticias.pipeline.content_filter import _DEFAULT_BLOCKED, filter_content
 from tests.helpers import make_item
+
+
+class TestDefaultBlocked:
+    """Tests for _DEFAULT_BLOCKED membership and content coverage."""
+
+    def test_tarot_in_default_blocked(self) -> None:
+        """``tarot`` is included in the default blocked list."""
+        assert "tarot" in _DEFAULT_BLOCKED
+
+    def test_expanded_default_blocked_covers_entertainment(self) -> None:
+        """Expanded default list drops items with new entertainment keywords."""
+        items = [
+            make_item(title="Tarot diario: predicciones"),
+            make_item(title="Videncia y predicciones"),
+            make_item(title="Carta astral semanal"),
+            make_item(title="Signo zodiacal del mes"),
+        ]
+        result = filter_content(items, blocked=None)
+        assert result == []
+
+
+class TestAccentInsensitive:
+    """Accent-insensitive matching via NFKD normalization."""
+
+    def test_unaccented_title_matches_accented_keyword(self) -> None:
+        """Unaccented 'horoscopo' matches accented 'horóscopo' keyword."""
+        items = [make_item(title="horoscopo de hoy")]
+        result = filter_content(items, blocked=["horóscopo"])
+        assert result == []
+
+    def test_accented_title_matches_unaccented_keyword(self) -> None:
+        """Accented 'horóscopo' matches unaccented 'horoscopo' keyword (reverse)."""
+        items = [make_item(title="horóscopo de la semana")]
+        result = filter_content(items, blocked=["horoscopo"])
+        assert result == []
+
+    def test_multi_word_accented_keyword_match(self) -> None:
+        """Multi-word 'carta astral' without accents matches accented item text."""
+        items = [make_item(title="carta astral semanal")]
+        result = filter_content(items, blocked=["carta astral"])
+        assert result == []
+
+    def test_mixed_case_preserved_after_normalization(self) -> None:
+        """Mixed-case 'GRAN HERMANO' still matches normalized 'gran hermano'."""
+        items = [make_item(title="GRAN HERMANO: la gala de esta noche")]
+        result = filter_content(items, blocked=["Gran Hermano"])
+        assert result == []
+
+    def test_user_blocked_keywords_also_normalized(self) -> None:
+        """User-supplied accented keywords are normalized like defaults."""
+        items = [make_item(title="musica de fondo relajante")]
+        result = filter_content(items, blocked=["música"])
+        assert result == []
 
 
 class TestFilterContent:
@@ -110,3 +165,48 @@ class TestFilterContent:
         """Empty items list with default keywords returns empty list."""
         result = filter_content([], blocked=None)
         assert result == []
+
+
+@pytest.mark.slow
+class TestContentFilterPerf:
+    """Performance regression guard for filter_content.
+
+    These tests use self-benchmarking to detect major regressions.
+    Thresholds are set generously (3× baseline minimum) to tolerate
+    normal system-noise variance while still catching O(n²) behavior
+    or accidental blocking I/O.
+    """
+
+    # Baseline: median of 200 fastest runs on the current implementation
+    # with 14 default keywords + NFKD normalization (measured 2026-07-08).
+    _BASELINE_US = 1570  # minimum observed runtime (microseconds)
+    _THRESHOLD_US = 4700  # 3× baseline — catches 10×+ regressions
+
+    def _make_items(self, count: int) -> list:
+        return [
+            make_item(
+                title=f"Noticia número {i}",
+                body=f"Contenido de la noticia {i} "
+                f"con suficientes palabras para filtrado.",
+            )
+            for i in range(count)
+        ]
+
+    def test_filter_content_perf_1000_items(self) -> None:
+        """filter_content with 1000 items is within 3× baseline."""
+        items = self._make_items(1000)
+
+        # Warmup
+        for _ in range(10):
+            filter_content(items)
+
+        # Timed run
+        t0 = time.perf_counter()
+        result = filter_content(items)
+        elapsed_us = (time.perf_counter() - t0) * 1_000_000
+
+        assert len(result) <= len(items)
+        assert elapsed_us < self._THRESHOLD_US, (
+            f"filter_content(1000 items) took {elapsed_us:.0f}µs, "
+            f"exceeds threshold {self._THRESHOLD_US}µs"
+        )

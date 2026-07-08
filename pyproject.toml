@@ -53,4 +53,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: end-to-end integration tests that exercise the full pipeline",
+    "slow: tests that are performance-sensitive or take longer to run",
 ]
