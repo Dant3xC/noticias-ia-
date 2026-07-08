@@ -12,6 +12,7 @@ The default keyword list targets Argentine entertainment content
 from __future__ import annotations
 
 import logging
+import unicodedata
 
 from noticias.models.item import NewsItem
 
@@ -26,7 +27,27 @@ _DEFAULT_BLOCKED: list[str] = [
     "farándula",
     "chismes",
     "escandalos",
+    "tarot",
+    "videncia",
+    "carta astral",
+    "signo zodiacal",
+    "horoscopo",
+    "astrologia",
 ]
+
+
+def _normalize(text: str) -> str:
+    """NFKD-normalize → strip combining marks → lowercase.
+
+    This folds accented characters to their ASCII base form so that
+    e.g. ``"horóscopo"`` and ``"horoscopo"`` compare equal.
+    """
+    lowered = text.lower()
+    # Fast path: pure ASCII — no accent decomposition needed.
+    if lowered.isascii():
+        return lowered
+    nfkd = unicodedata.normalize("NFKD", lowered)
+    return nfkd.encode("ascii", "ignore").decode("ascii")
 
 
 def filter_content(
@@ -47,13 +68,13 @@ def filter_content(
     if not keywords:
         return list(items)
 
-    keywords_lower = [k.lower() for k in keywords]
+    keywords_norm = [_normalize(k) for k in keywords]
     result: list[NewsItem] = []
     dropped = 0
 
     for item in items:
-        text = (item.title + " " + item.body).lower()
-        if not any(kw in text for kw in keywords_lower):
+        text = _normalize(item.title + " " + item.body)
+        if not any(kw in text for kw in keywords_norm):
             result.append(item)
         else:
             dropped += 1
