@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Default cosine similarity threshold for semantic clustering.
 # Two titles are considered similar when their cosine similarity >= this value.
-COSINE_THRESHOLD: float = 0.85
+COSINE_THRESHOLD: float = 0.78
 
 
 class Embedder:

@@ -183,8 +183,8 @@ class TestEmbedder:
     # ------------------------------------------------------------------
 
     def test_cosine_threshold_constant(self) -> None:
-        """COSINE_THRESHOLD is 0.85 as specified in design."""
-        assert COSINE_THRESHOLD == 0.85
+        """COSINE_THRESHOLD is 0.78 as specified in PR2 spec."""
+        assert COSINE_THRESHOLD == 0.78
 
 
 # ------------------------------------------------------------------

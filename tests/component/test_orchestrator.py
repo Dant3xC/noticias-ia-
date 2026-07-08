@@ -699,3 +699,53 @@ async def test_batch_llm_budget_exceeded_all_stubs() -> None:
 
     # LLM was NOT called (budget guard skipped it)
     mock_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_embedder_passed_to_cluster() -> None:
+    """An Embedder instance is instantiated and passed to _cluster as the embedder kwarg."""
+    from noticias.pipeline.embed import Embedder
+
+    config = _make_config()
+    sources = config.sources
+    items = [
+        _make_item_for_source(
+            title="Test economy plan announced",
+            source="pagina12", lean="left",
+        ),
+        _make_item_for_source(
+            title="Test economy plan details",
+            source="infobae", lean="center",
+        ),
+    ]
+
+    with (
+        patch(
+            "noticias.pipeline.orchestrator.fetch_all_sources",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "noticias.pipeline.orchestrator._cluster",
+        ) as mock_cluster,
+    ):
+        mock_fetch.return_value = FetchResult(items=items, failures=[])
+        # Make _cluster return empty so pipeline stops at cluster check
+        mock_cluster.return_value = []
+
+        llm_client = LLMClient(token_budget=5000)
+
+        await run_pipeline_async(
+            sources=sources,
+            window=timedelta(hours=24),
+            llm=llm_client,
+            config=config,
+        )
+
+    mock_cluster.assert_called_once()
+    call_kwargs = mock_cluster.call_args.kwargs
+    assert "embedder" in call_kwargs, (
+        f"_cluster called without embedder kwarg. Got kwargs: {call_kwargs}"
+    )
+    assert isinstance(call_kwargs["embedder"], Embedder), (
+        f"embedder kwarg is not an Embedder instance: {type(call_kwargs['embedder'])}"
+    )
