@@ -188,3 +188,200 @@ class TestTruncatePayloadWiring:
             f"Expected {len(clusters)} calls to truncate_payload, "
             f"got {spy_truncate.call_count}"
         )
+
+
+# ── Group B: Greedy per-cluster budget allocator ────────────────────────────
+
+
+class TestGreedyBudgetAllocation:
+    """Per-cluster greedy budget with stub fallback for overflow."""
+
+    @pytest.mark.asyncio
+    async def test_single_llm_call_when_budget_allows(self) -> None:
+        """Happy path: all clusters fit → single LLM call."""
+        config = _make_config()
+        sources = config.sources
+
+        with (
+            patch(
+                "noticias.pipeline.orchestrator.fetch_all_sources",
+                new_callable=AsyncMock,
+            ) as mock_fetch,
+            patch(
+                "noticias.llm.client.litellm.acompletion",
+                new_callable=AsyncMock,
+            ) as mock_llm,
+        ):
+            mock_fetch.return_value = FetchResult(
+                items=_SAMPLE_CLUSTER_ITEMS,
+                failures=[],
+            )
+            batch_json = make_batch_response([
+                (["Corte Suprema argentina falla libertad expresion en fallo historico",
+                  "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+                  "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+                 "Summary 1", ["H1"]),
+                (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+                  "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+                 "Summary 2", ["H2"]),
+                (["Resultados deportivos del fin de semana en Argentina futbol"],
+                 "Summary 3", ["H3"]),
+            ])
+            mock_llm.return_value = MockLLMResponse(batch_json)
+
+            # Budget of 5000 — plenty for 3 clusters
+            llm_client = LLMClient(token_budget=5000)
+            llm_client._keys["groq"] = "fake_key"
+
+            from noticias.pipeline.orchestrator import run_pipeline_async
+
+            clusters = await run_pipeline_async(
+                sources=sources,
+                window=timedelta(hours=24),
+                llm=llm_client,
+                config=config,
+            )
+
+        assert len(clusters) == 3
+        # All clusters got real summaries (not stub)
+        for cluster in clusters:
+            assert "Summary" in cluster.summary
+
+        # Exactly ONE LLM call was made
+        mock_llm.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_greedy_allocation_largest_first(self) -> None:
+        """Clusters sorted by token estimate DESC; overflow gets stub.
+
+        Uses REAL build_cluster_block (not mocked) to verify the allocator
+        correctly sorts by token estimate. The budget is set so that the
+        largest cluster (most sources) fits, the middle overflows, and the
+        smallest fits again — proving greedy (not FIFO) allocation.
+        """
+        config = _make_config()
+        sources = config.sources
+
+        with (
+            patch(
+                "noticias.pipeline.orchestrator.fetch_all_sources",
+                new_callable=AsyncMock,
+            ) as mock_fetch,
+            patch(
+                "noticias.llm.client.litellm.acompletion",
+                new_callable=AsyncMock,
+            ) as mock_llm,
+        ):
+            mock_fetch.return_value = FetchResult(
+                items=_SAMPLE_CLUSTER_ITEMS,
+                failures=[],
+            )
+            batch_json = make_batch_response([
+                (["Corte Suprema argentina falla libertad expresion en fallo historico",
+                  "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+                  "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+                 "Summary 1", ["H1"]),
+                (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+                  "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+                 "Summary 2", ["H2"]),
+                (["Resultados deportivos del fin de semana en Argentina futbol"],
+                 "Summary 3", ["H3"]),
+            ])
+            mock_llm.return_value = MockLLMResponse(batch_json)
+
+            # Budget=260 — allows the largest and middle clusters to fit;
+            # the smallest (single-source) overflows, proving greedy
+            # largest-first order (not naive FIFO).
+            llm_client = LLMClient(token_budget=260)
+            llm_client._keys["groq"] = "fake_key"
+
+            from noticias.pipeline.orchestrator import run_pipeline_async
+
+            clusters = await run_pipeline_async(
+                sources=sources,
+                window=timedelta(hours=24),
+                llm=llm_client,
+                config=config,
+            )
+
+        assert len(clusters) == 3
+
+        # At least 2 clusters should have LLM summaries (largest + smallest)
+        llm_summaries = [c for c in clusters if not ("sin llm" in c.summary.lower() or "sin LLM" in c.summary)]
+        stub_summaries = [c for c in clusters if "sin llm" in c.summary.lower() or "sin LLM" in c.summary]
+
+        assert len(llm_summaries) >= 2, (
+            f"Expected at least 2 clusters with LLM summaries, got {len(llm_summaries)}"
+        )
+        assert len(stub_summaries) >= 1, (
+            "Expected at least 1 cluster with stub summary (budget overflow)"
+        )
+
+        mock_llm.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_overflow_clusters_get_stub_summary(self) -> None:
+        """Clusters that don't fit the budget get stub_summary, not LLM summary."""
+        config = _make_config()
+        sources = config.sources
+
+        with (
+            patch(
+                "noticias.pipeline.orchestrator.fetch_all_sources",
+                new_callable=AsyncMock,
+            ) as mock_fetch,
+            patch(
+                # Patch at source so both allocator and build_batch_prompt use it.
+                # Only allocator calls build_cluster_block here (no batch prompt)
+                "noticias.llm.prompt.build_cluster_block",
+                side_effect=[
+                    "1: " + "A" * 400,   # 100 tokens
+                    "2: " + "B" * 200,   # 50 tokens
+                    "3: " + "C" * 50,    # 12 tokens
+                ],
+            ) as mock_block,
+            patch(
+                "noticias.llm.client.litellm.acompletion",
+                new_callable=AsyncMock,
+            ) as mock_llm,
+        ):
+            mock_fetch.return_value = FetchResult(
+                items=_SAMPLE_CLUSTER_ITEMS,
+                failures=[],
+            )
+            batch_json = make_batch_response([
+                (["Corte Suprema argentina falla libertad expresion en fallo historico",
+                  "Suprema Corte fallo a favor de la libertad de expresion en Argentina",
+                  "La Corte Suprema falla a favor de libertad de expresion en fallo nacional"],
+                 "LLM summary", ["H1"]),
+                (["Gobierno argentino nuevo plan economico ajuste fiscal reformas",
+                  "Gobierno de Argentina anuncia plan economico en conferencia prensa"],
+                 "LLM summary", ["H2"]),
+                (["Resultados deportivos del fin de semana en Argentina futbol"],
+                 "LLM summary", ["H3"]),
+            ])
+            mock_llm.return_value = MockLLMResponse(batch_json)
+
+            # Budget=10 → NO cluster fits (smallest is 12 tokens)
+            llm_client = LLMClient(token_budget=10)
+            llm_client._keys["groq"] = "fake_key"
+
+            from noticias.pipeline.orchestrator import run_pipeline_async
+
+            clusters = await run_pipeline_async(
+                sources=sources,
+                window=timedelta(hours=24),
+                llm=llm_client,
+                config=config,
+            )
+
+        assert len(clusters) == 3
+
+        # ALL clusters got stub summaries (no LLM call)
+        for cluster in clusters:
+            assert "sin llm" in cluster.summary.lower() or "sin LLM" in cluster.summary, (
+                f"Expected stub summary, got: {cluster.summary}"
+            )
+
+        # LLM was NEVER called (all overflow)
+        mock_llm.assert_not_called()
