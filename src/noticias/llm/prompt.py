@@ -69,6 +69,33 @@ def build_prompt(payload: FamilyFormatPayload) -> list[dict[str, str]]:
     ]
 
 
+def build_cluster_block(payload: FamilyFormatPayload) -> str:
+    """Build a single cluster text block from a family-format payload.
+
+    Args:
+        payload: The compact per-cluster ``FamilyFormatPayload``.
+
+    Returns:
+        A formatted text block with sources, common facts, and divergences.
+    """
+    sources_str = ", ".join(
+        f"{s.name} ({s.lean})" for s in payload.sources
+    )
+    common_facts_str = (
+        ", ".join(payload.common_facts) if payload.common_facts else "Ninguno"
+    )
+    divergences_str = (
+        ", ".join(payload.divergences) if payload.divergences else "Ninguna"
+    )
+    return (
+        f"Cluster (id: \"{payload.event_label}\", "
+        f"event_label: \"{payload.event_label}\"):\n"
+        f"Sources: {sources_str}\n"
+        f"Common facts: {common_facts_str}\n"
+        f"Divergences: {divergences_str}"
+    )
+
+
 def build_batch_prompt(
     payloads: list[FamilyFormatPayload],
 ) -> list[dict[str, str]]:
@@ -86,23 +113,8 @@ def build_batch_prompt(
         ``[system, user]`` message list ready for ``litellm.acompletion``.
     """
     cluster_blocks: list[str] = []
-    for i, p in enumerate(payloads):
-        sources_str = ", ".join(
-            f"{s.name} ({s.lean})" for s in p.sources
-        )
-        common_facts_str = (
-            ", ".join(p.common_facts) if p.common_facts else "Ninguno"
-        )
-        divergences_str = (
-            ", ".join(p.divergences) if p.divergences else "Ninguna"
-        )
-        block = (
-            f"Cluster {i + 1} (id: \"{p.event_label}\", "
-            f"event_label: \"{p.event_label}\"):\n"
-            f"Sources: {sources_str}\n"
-            f"Common facts: {common_facts_str}\n"
-            f"Divergences: {divergences_str}"
-        )
+    for p in payloads:
+        block = build_cluster_block(p)
         cluster_blocks.append(block)
 
     user_content = (

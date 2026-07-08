@@ -41,7 +41,7 @@ from noticias.pipeline.cluster import cluster as _cluster
 from noticias.pipeline.content_filter import filter_content
 from noticias.pipeline.dedup import dedup as _dedup
 from noticias.pipeline.embed import Embedder
-from noticias.pipeline.family import build_family_format
+from noticias.pipeline.family import build_family_format, truncate_payload
 from noticias.pipeline.fetch import fetch_all_sources
 from noticias.pipeline.options import PipelineOptions
 from noticias.pipeline.topic_filter import filter_topics
@@ -127,7 +127,7 @@ async def run_pipeline_async(
     payloads: list = []
     for cluster in clusters:
         payload = build_family_format(cluster)
-        payloads.append(payload)
+        payloads.append(truncate_payload(payload))
         trust_label, trust_reason = compute_trust(cluster)
         cluster.trust_label = trust_label.value
         cluster.trust_reason = trust_reason

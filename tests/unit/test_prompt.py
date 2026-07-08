@@ -112,6 +112,60 @@ class TestBuildPrompt:
         assert "{divergences}" in USER_PROMPT_TEMPLATE
 
 
+class TestBuildClusterBlock:
+    """Tests for ``build_cluster_block`` — per-payload text block."""
+
+    def test_returns_string(self) -> None:
+        payload = _make_payload(event_label="Test Event")
+        from noticias.llm.prompt import build_cluster_block
+
+        block = build_cluster_block(payload)
+        assert isinstance(block, str)
+        assert len(block) > 0
+
+    def test_contains_event_label(self) -> None:
+        from noticias.llm.prompt import build_cluster_block
+
+        payload = _make_payload(event_label="Caso especial")
+        block = build_cluster_block(payload)
+        assert "Caso especial" in block
+
+    def test_contains_sources_with_lean(self) -> None:
+        from noticias.llm.prompt import build_cluster_block
+
+        payload = _make_payload(
+            sources=[("pagina12", "left"), ("infobae", "center")],
+        )
+        block = build_cluster_block(payload)
+        assert "pagina12" in block
+        assert "infobae" in block
+        assert "left" in block
+        assert "center" in block
+
+    def test_contains_common_facts(self) -> None:
+        from noticias.llm.prompt import build_cluster_block
+
+        payload = _make_payload(common_facts=["gobierno", "medidas"])
+        block = build_cluster_block(payload)
+        assert "gobierno" in block
+        assert "medidas" in block
+
+    def test_contains_divergences(self) -> None:
+        from noticias.llm.prompt import build_cluster_block
+
+        payload = _make_payload(divergences=["div_a", "div_b"])
+        block = build_cluster_block(payload)
+        assert "div_a" in block
+        assert "div_b" in block
+
+    def test_placeholder_when_no_facts(self) -> None:
+        from noticias.llm.prompt import build_cluster_block
+
+        payload = _make_payload(common_facts=[], divergences=[])
+        block = build_cluster_block(payload)
+        assert "Ninguno" in block or "Ninguna" in block
+
+
 class TestBuildBatchPrompt:
     """Tests for ``build_batch_prompt`` — the multi-cluster mega-prompt."""
 
