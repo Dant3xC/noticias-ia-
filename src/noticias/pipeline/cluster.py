@@ -1,16 +1,15 @@
-"""Story clustering by title similarity and canonical URL matching.
+"""Story clustering by title similarity, embeddings, and domain+slug matching.
 
 Groups news items into story families (clusters) using union-find.
 
 Two items belong to the same cluster when **one or more** of the following
 conditions hold:
 
-    1. (Primary) Embedding-based cosine similarity ≥ 0.85 (when an
+    1. (Primary) Embedding-based cosine similarity ≥ COSINE_THRESHOLD (when an
        ``Embedder`` instance is provided and produces results).
     2. (Fallback) Fuzzy title ratio > 0.75 (used when no embedder is
        available, or for items with empty titles).
-    3. They share the same canonical domain AND have meaningful slug
-       overlap.
+    3. They share the same domain AND have meaningful slug overlap.
 
 The second heuristic catches cases where different outlets cover the same
 event but use different headline phrasings (e.g. ``"Corte Suprema falla..."``
@@ -31,8 +30,7 @@ from rapidfuzz import fuzz
 
 from noticias.models.cluster import Cluster
 from noticias.models.item import NewsItem
-from noticias.pipeline.dedup import canonical_url
-from noticias.pipeline.embed import COSINE_THRESHOLD, Embedder
+from noticias.pipeline.embed import Embedder
 
 # Minimum slug similarity ratio for same-domain matching.
 _SLUG_THRESHOLD: Final[float] = 0.5
@@ -105,8 +103,7 @@ def cluster(
         if rx != ry:
             parent[rx] = ry
 
-    # Pre-compute canonical URLs, domains, and slugs (avoids recomputation).
-    can_urls = [canonical_url(item.url) for item in items]
+    # Pre-compute domains and slugs (avoids recomputation).
     domains = [_domain(item.url) for item in items]
     slugs = [_slug(item.url) for item in items]
 
