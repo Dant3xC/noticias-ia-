@@ -1,6 +1,6 @@
 """CLI logic for `noticias fuentes` subcommands.
 
-Provides ``list``, ``add``, and ``remove`` operations backed by
+Provides ``list``, ``add``, ``remove``, and ``reset`` operations backed by
 ``SourceRegistry``.  CLI strings are in neutral Spanish (per PR1 i18n
 convention); docstrings are in English (code contract).
 """
@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from noticias.models.source import Lean, Source
+from noticias.sources.defaults import DEFAULT_SOURCES
 from noticias.sources.registry import SourceRegistry
 
 _CONFIG_PATH = Path.home() / ".config" / "noticias" / "config.json"
@@ -23,6 +24,36 @@ _CONFIG_PATH = Path.home() / ".config" / "noticias" / "config.json"
 def _save(registry: SourceRegistry) -> None:
     """Persist the registry to the default config path."""
     registry.save(_CONFIG_PATH)
+
+
+def fuentes_reset(registry: SourceRegistry) -> None:
+    """Reset sources to the 5 default Argentinian outlets; preserve other config.
+
+    Replaces the ``sources`` array with ``DEFAULT_SOURCES`` and keeps any
+    other fields the user has customized (``topics``, ``blocked_keywords``,
+    ``model``, ``token_budget``, etc.). Use this to recover when the
+    config has drifted to a broken state (e.g. only one source with a
+    dead URL).
+    """
+    import json
+
+    import msgspec
+
+    console = Console()
+    raw = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    raw["sources"] = [msgspec.to_builtins(s) for s in DEFAULT_SOURCES]
+    _CONFIG_PATH.write_text(
+        json.dumps(raw, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    console.print(
+        f"[green]Fuentes reseteadas a {len(DEFAULT_SOURCES)} defaults: "
+        + ", ".join(s.name for s in DEFAULT_SOURCES)
+        + ".[/green]"
+    )
+    console.print(
+        "[dim]Otros campos (topics, model, etc.) preservados.[/dim]"
+    )
 
 
 def fuentes_list(registry: SourceRegistry) -> None:

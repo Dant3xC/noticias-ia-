@@ -18,38 +18,36 @@ from __future__ import annotations
 # the installed `noticias` entry point (which goes straight to `app()` via
 # pyproject.toml's [project.scripts]). Loading here ensures the env is
 # populated regardless of entry point.
-from pathlib import Path as _Path  # noqa: E402
-
 from dotenv import load_dotenv as _load_dotenv  # noqa: E402
 
 from noticias._project_root import project_root as _pr  # noqa: E402
 
-_load_dotenv(_pr() / ".env")
+_load_dotenv(_pr() / ".env")  # noqa: E402
 
-import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Annotated
+import logging  # noqa: E402
+from datetime import datetime  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Annotated  # noqa: E402
 
-import typer
-from rich.console import Console
-from rich.table import Table
+import typer  # noqa: E402
+from rich.console import Console  # noqa: E402
+from rich.table import Table  # noqa: E402
 
-from noticias import __version__
-from noticias.cli.health import health as _health_command
-from noticias.llm.client import LLMClient, StubLLMClient
-from noticias.models.snapshot import Snapshot, SnapshotCluster
-from noticias.models.source import SourceConfig
-from noticias.persistence.snapshot import (
-    list_snapshots,
-    read_snapshot,
-    write_snapshot,
-)
-from noticias.pipeline.options import PipelineOptions
-from noticias.pipeline.orchestrator import run_pipeline
-from noticias.pipeline.window import parse_since
-from noticias.render.console import render, render_snapshot
-from noticias.sources.registry import SourceRegistry
+from noticias import __version__  # noqa: E402
+from noticias.cli.health import health as _health_command  # noqa: E402
+from noticias.llm.client import LLMClient, StubLLMClient  # noqa: E402
+from noticias.models.snapshot import Snapshot, SnapshotCluster  # noqa: E402
+from noticias.models.source import SourceConfig  # noqa: E402
+from noticias.persistence.snapshot import (  # noqa: E402
+    list_snapshots,  # noqa: E402
+    read_snapshot,  # noqa: E402
+    write_snapshot,  # noqa: E402
+)  # noqa: E402
+from noticias.pipeline.options import PipelineOptions  # noqa: E402
+from noticias.pipeline.orchestrator import run_pipeline  # noqa: E402
+from noticias.pipeline.window import parse_since  # noqa: E402
+from noticias.render.console import render, render_snapshot  # noqa: E402
+from noticias.sources.registry import SourceRegistry  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +125,26 @@ def fuentes_remove_command(
     from noticias.cli.fuentes import fuentes_remove as _fuentes_remove
 
     _fuentes_remove(registry, name)
+
+
+# ── fuentes reset ──────────────────────────────────────────────────────────
+
+
+@fuentes_app.command(
+    "reset",
+    help="Resetear fuentes a los 5 defaults (preserva otros campos).",
+)
+def fuentes_reset_command() -> None:
+    """Reset sources to the 5 default Argentinian outlets.
+
+    Preserves any other fields the user has configured (topics, model,
+    blocked_keywords, token_budget, etc.). Use this to recover from a
+    broken state without re-running scripts/reset_fuentes.py.
+    """
+    registry = SourceRegistry.default()
+    from noticias.cli.fuentes import fuentes_reset as _fuentes_reset
+
+    _fuentes_reset(registry)
 
 
 # ── fuentes config subcommand ──────────────────────────────────────────────
