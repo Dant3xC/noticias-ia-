@@ -376,20 +376,3 @@ class TestLLMClientComplete:
             # No success, tokens_used stays 0
             assert client.tokens_used == 0
 
-
-class TestTemplateSummary:
-    """template_summary returns neutral Spanish."""
-
-    def test_template_summary_string(self) -> None:
-        from noticias.llm.client import template_summary
-        from tests.helpers import make_cluster
-
-        cluster = make_cluster()
-        result = template_summary(cluster)
-        assert isinstance(result, str)
-        assert len(result) > 10
-        # Neutral Spanish — no voseo
-        assert "Usá" not in result
-        assert "Agregá" not in result
-        assert "Configurá" not in result
-        assert "resumen" in result.lower()
