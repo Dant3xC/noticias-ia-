@@ -1,19 +1,18 @@
-"""Story clustering by title similarity, embeddings, and domain+slug matching.
+"""Story clustering by title similarity, body token overlap, and domain+slug matching.
 
 Groups news items into story families (clusters) using union-find.
 
 Two items belong to the same cluster when **one or more** of the following
 conditions hold:
 
-    1. (Primary) Embedding-based cosine similarity ≥ COSINE_THRESHOLD (when an
-       ``Embedder`` instance is provided and produces results).
-    2. (Fallback) Fuzzy title ratio > 0.75 (used when no embedder is
-       available, or for items with empty titles).
-    3. They share the same domain AND have meaningful slug overlap.
+    1. Fuzzy title ratio > 0.55 (primary signal — uses rapidfuzz).
+    2. Body token overlap (Jaccard via ``tokenize()``) > 0.30 (catches stories
+       whose headlines differ but article bodies cover the same event).
+    3. They share the same domain AND have meaningful slug overlap (ratio > 0.40).
 
-The second heuristic catches cases where different outlets cover the same
-event but use different headline phrasings (e.g. ``"Corte Suprema falla..."``
-vs ``"La Corte decidió..."`` but both link to the same court ruling URL).
+Body token overlap was added to compensate for the removal of the Embedder
+(fastembed) path, since no local ML models are available. The overlap is computed
+on the first 500 characters of each item's body to keep pairwise comparison fast.
 
 Single items that do not match any other item form clusters of size 1.
 """
@@ -25,15 +24,14 @@ from collections import defaultdict
 from typing import Final
 from urllib.parse import urlparse
 
-import numpy as np
 from rapidfuzz import fuzz
 
 from noticias.models.cluster import Cluster
 from noticias.models.item import NewsItem
-from noticias.pipeline.embed import Embedder
+from noticias.pipeline.tokenize import tokenize
 
 # Minimum slug similarity ratio for same-domain matching.
-_SLUG_THRESHOLD: Final[float] = 0.5
+_SLUG_THRESHOLD: Final[float] = 0.4
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +44,7 @@ def _slug(url: str) -> str:
     patterns for the same event (e.g. ``/politica/jubilaciones-nuevas-medidas``
     and ``/politica/jubilaciones-medidas-gobierno``).
 
-    This is a **heuristic** — it trades precision for zero dependencies.
-    Embedding-based semantic clustering is a documented future enhancement.
+    This is a **heuristic** — it trades precision for zero model dependencies.
     """
     parsed = urlparse(url)
     segments = [s for s in parsed.path.split("/") if s]
@@ -57,28 +54,21 @@ def _slug(url: str) -> str:
     return "/".join(segments[-n:]).lower()
 
 
-def cluster(
-    items: list[NewsItem],
-    embedder: Embedder | None = None,
-) -> list[Cluster]:
+def cluster(items: list[NewsItem]) -> list[Cluster]:
     """Group related news items into story clusters.
 
     Uses a union-find (disjoint-set) data structure so that chains of
     similarity propagate transitively: if A matches B and B matches C,
     all three land in the same cluster even if A does not directly match C.
 
-    When *embedder* is provided and produces embeddings, cosine similarity
-    (≥ ``COSINE_THRESHOLD`` = 0.85) is used as the **primary** clustering
-    signal. Items with empty titles, or when the embedder call fails, fall
-    back to the existing rapidfuzz title-ratio heuristic (ratio > 0.75).
+    Clustering signals (checked in order for each pair):
 
-    When *embedder* is ``None`` (the default), the function behaves exactly
-    as before — rapidfuzz-only with domain+slug fallback.
+        1. **Title fuzzy ratio** > 0.55 (rapidfuzz).
+        2. **Body token overlap** (Jaccard via ``tokenize()``) > 0.30.
+        3. **Same domain + slug ratio** > 0.40.
 
     Args:
         items: De-duplicated, time-windowed news items.
-        embedder: Optional ``Embedder`` instance for semantic clustering.
-            When ``None``, rapidfuzz title similarity is used exclusively.
 
     Returns:
         A list of Cluster objects, sorted by cluster size (largest first).
@@ -103,41 +93,31 @@ def cluster(
         if rx != ry:
             parent[rx] = ry
 
-    # Pre-compute domains and slugs (avoids recomputation).
+    # Pre-compute domains, slugs, and body token sets (avoids recomputation).
     domains = [_domain(item.url) for item in items]
     slugs = [_slug(item.url) for item in items]
-
-    # Compute embeddings if an embedder is provided.
-    embeddings: np.ndarray | None = None
-    if embedder is not None:
-        titles = [item.title for item in items]
-        embeddings = embedder.embed(titles)
-        if embeddings is None:
-            logger.warning(
-                "Embedder returned None for %d items; "
-                "falling back to rapidfuzz for this run.",
-                n,
-            )
+    body_tokens = [
+        tokenize(item.body[:500]) if item.body else set()
+        for item in items
+    ]
 
     # --- pairwise comparison ---
     for i in range(n):
         for j in range(i + 1, n):
             matched = False
 
-            # 1. Embedding-based similarity (primary signal).
-            if embeddings is not None:
-                title_i = items[i].title.strip()
-                title_j = items[j].title.strip()
-                if title_i and title_j:
-                    if Embedder.is_similar(embeddings[i], embeddings[j]):
-                        union(i, j)
-                        matched = True
+            # 1. rapidfuzz title similarity (primary signal).
+            title_ratio = fuzz.ratio(items[i].title, items[j].title) / 100.0
+            if title_ratio > 0.55:
+                union(i, j)
+                matched = True
 
-            # 2. rapidfuzz title similarity (fallback — used when no
-            #    embeddings are available, or for empty-title items).
-            if not matched:
-                title_ratio = fuzz.ratio(items[i].title, items[j].title) / 100.0
-                if title_ratio > 0.75:
+            # 2. Body token overlap (catches stories whose headlines differ
+            #    but article bodies cover the same event).
+            if not matched and body_tokens[i] and body_tokens[j]:
+                inter = len(body_tokens[i] & body_tokens[j])
+                uni = len(body_tokens[i] | body_tokens[j])
+                if uni > 0 and (inter / uni) > 0.3:
                     union(i, j)
                     matched = True
 

@@ -80,14 +80,14 @@ _SAMPLE_CLUSTER_ITEMS = [
         title="Gobierno argentino nuevo plan economico ajuste fiscal reformas",
         source="pagina12", lean="left",
         body="El gobierno anunció un nuevo plan económico con medidas de ajuste fiscal y reformas estructurales para el próximo trimestre fiscal en Argentina.",
-        url="https://example.com/economia/plan/anuncio-ajuste-fiscal-reformas",
+        url="https://otro-ejemplo.com/economia/plan/anuncio-ajuste-fiscal-reformas",
         published_at_delta_hours=4,
     ),
     _make_item_for_source(
         title="Gobierno de Argentina anuncia plan economico en conferencia prensa",
         source="clarin", lean="right",
         body="El gobierno presentó un nuevo plan económico en conferencia de prensa con medidas de ajuste fiscal para el próximo trimestre en Argentina.",
-        url="https://example.com/economia/plan/conferencia-prensa-anuncio",
+        url="https://otro-ejemplo.com/economia/plan/conferencia-prensa-anuncio",
         published_at_delta_hours=5,
     ),
     # Cluster 3: 1 source (smallest, ~90 chars)

@@ -40,7 +40,6 @@ from noticias.models.source import Source, SourceConfig
 from noticias.pipeline.cluster import cluster as _cluster
 from noticias.pipeline.content_filter import filter_content
 from noticias.pipeline.dedup import dedup as _dedup
-from noticias.pipeline.embed import Embedder
 from noticias.pipeline.family import build_family_format, truncate_payload
 from noticias.pipeline.fetch import fetch_all_sources
 from noticias.pipeline.options import PipelineOptions
@@ -117,8 +116,7 @@ async def run_pipeline_async(
     deduped = _dedup(items)
 
     # ── Stage 6: Cluster ────────────────────────────────────────────────
-    embedder = Embedder()
-    clusters = _cluster(deduped, embedder=embedder)
+    clusters = _cluster(deduped)
     if not clusters:
         logger.info("Pipeline produced zero clusters (no items in window).")
         return clusters
