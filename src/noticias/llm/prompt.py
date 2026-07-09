@@ -33,41 +33,6 @@ USER_PROMPT_TEMPLATE = (
 )
 
 
-def build_prompt(payload: FamilyFormatPayload) -> list[dict[str, str]]:
-    """Build the message list for the LLM call.
-
-    Constructs a system message with the instruction prompt and a user
-    message with the event data from the payload.
-
-    Args:
-        payload: The compact per-cluster ``FamilyFormatPayload``.
-
-    Returns:
-        A list of two message dicts (``[system, user]``) ready for
-        ``litellm.acompletion(messages=...)``.
-    """
-    sources_str = ", ".join(
-        f"{s.name} ({s.lean})" for s in payload.sources
-    )
-    common_facts_str = (
-        ", ".join(payload.common_facts) if payload.common_facts else "Ninguno"
-    )
-    divergences_str = (
-        ", ".join(payload.divergences) if payload.divergences else "Ninguna"
-    )
-
-    user_content = USER_PROMPT_TEMPLATE.format(
-        event_label=payload.event_label,
-        sources=sources_str,
-        common_facts=common_facts_str,
-        divergences=divergences_str,
-    )
-
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
-    ]
-
 
 def build_cluster_block(payload: FamilyFormatPayload) -> str:
     """Build a single cluster text block from a family-format payload.

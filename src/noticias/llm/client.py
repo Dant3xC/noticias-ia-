@@ -18,8 +18,6 @@ from typing import Any
 
 import litellm
 
-from noticias.models.cluster import Cluster
-
 logger = logging.getLogger(__name__)
 
 
@@ -186,22 +184,6 @@ class LLMClient:
             f"token_budget={self.token_budget})"
         )
 
-
-def template_summary(cluster: Cluster) -> str:
-    """Generate a Spanish template summary string.
-
-    Used when the LLM budget is exhausted or no API keys are configured.
-
-    Args:
-        cluster: The cluster (used for its event_label).
-
-    Returns:
-        A neutral Spanish template string (no voseo).
-    """
-    return (
-        "Sin resumen disponible "
-        "(presupuesto de LLM agotado o sin claves configuradas)."
-    )
 
 
 class StubLLMClient(LLMClient):
