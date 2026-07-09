@@ -14,6 +14,27 @@ from noticias.models.source import Source, SourceConfig
 from noticias.sources.defaults import DEFAULT_SOURCES
 
 
+def config_path() -> Path:
+    """Return the path to the noticias config file.
+
+    Honors the ``NOTICIAS_CONFIG_PATH`` environment variable if set; otherwise
+    returns the default at ``~/.config/noticias/config.json``.
+
+    Relative paths in the env var are resolved relative to the current
+    working directory.  Empty-string values are treated as "unset" and
+    fall back to the default path.
+
+    Returns:
+        Absolute path to the config file.
+    """
+    import os
+
+    env_path = os.environ.get("NOTICIAS_CONFIG_PATH")
+    if env_path:
+        return Path(env_path).expanduser().resolve()
+    return (Path.home() / ".config" / "noticias" / "config.json").resolve()
+
+
 class SourceRegistry:
     """Manages the list of configured news sources.
 
@@ -72,7 +93,10 @@ class SourceRegistry:
 
     @classmethod
     def default(cls) -> SourceRegistry:
-        """Load the user's default config file (~/.config/noticias/config.json).
+        """Load the user's default config file.
+
+        Uses :func:`config_path` to resolve the config location, which honors
+        the ``NOTICIAS_CONFIG_PATH`` environment variable.
 
         Fresh install (file does not exist): returns a registry seeded with
         the 7 default Argentinian RSS sources from `defaults.py`. The user
@@ -80,7 +104,7 @@ class SourceRegistry:
 
         Existing user (file exists): returns whatever they previously saved.
         """
-        path = Path.home() / ".config" / "noticias" / "config.json"
+        path = config_path()
         if not path.exists():
             return cls(config=SourceConfig(sources=list(DEFAULT_SOURCES)))
         return cls.load(path)

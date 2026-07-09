@@ -7,7 +7,6 @@ convention); docstrings are in English (code contract).
 
 from __future__ import annotations
 
-from pathlib import Path
 from urllib.parse import urlparse
 
 import typer
@@ -16,14 +15,12 @@ from rich.table import Table
 
 from noticias.models.source import Lean, Source
 from noticias.sources.defaults import DEFAULT_SOURCES
-from noticias.sources.registry import SourceRegistry
-
-_CONFIG_PATH = Path.home() / ".config" / "noticias" / "config.json"
+from noticias.sources.registry import SourceRegistry, config_path
 
 
 def _save(registry: SourceRegistry) -> None:
-    """Persist the registry to the default config path."""
-    registry.save(_CONFIG_PATH)
+    """Persist the registry to the config path (honors NOTICIAS_CONFIG_PATH)."""
+    registry.save(config_path())
 
 
 def fuentes_reset(registry: SourceRegistry) -> None:
@@ -40,9 +37,10 @@ def fuentes_reset(registry: SourceRegistry) -> None:
     import msgspec
 
     console = Console()
-    raw = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = config_path()
+    raw = json.loads(cfg.read_text(encoding="utf-8"))
     raw["sources"] = [msgspec.to_builtins(s) for s in DEFAULT_SOURCES]
-    _CONFIG_PATH.write_text(
+    cfg.write_text(
         json.dumps(raw, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )

@@ -47,7 +47,7 @@ from noticias.pipeline.options import PipelineOptions  # noqa: E402
 from noticias.pipeline.orchestrator import run_pipeline  # noqa: E402
 from noticias.pipeline.window import parse_since  # noqa: E402
 from noticias.render.console import render, render_snapshot  # noqa: E402
-from noticias.sources.registry import SourceRegistry  # noqa: E402
+from noticias.sources.registry import SourceRegistry, config_path  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ def fuentes_config_topics_command(
 
     if clear:
         config.topics = []
-        registry.save(Path.home() / ".config" / "noticias" / "config.json")
+        registry.save(config_path())
         console.print("[green]Temas de interés limpiados.[/green]")
         return
 
@@ -205,7 +205,7 @@ def fuentes_config_topics_command(
 
     # Set topics
     config.topics = list(topics_args)
-    registry.save(Path.home() / ".config" / "noticias" / "config.json")
+    registry.save(config_path())
     console.print(
         f"[green]Temas de interés actualizados: {', '.join(topics_args)}[/green]",
     )
