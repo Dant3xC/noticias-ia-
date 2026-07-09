@@ -5,14 +5,17 @@ Groups news items into story families (clusters) using union-find.
 Two items belong to the same cluster when **one or more** of the following
 conditions hold:
 
-    1. Fuzzy title ratio > 0.55 (primary signal — uses rapidfuzz).
-    2. Body token overlap (Jaccard via ``tokenize()``) > 0.30 (catches stories
+    1. Fuzzy title ratio > 0.65 (primary signal — uses rapidfuzz).
+    2. Body token overlap (Jaccard via ``tokenize()``) > 0.50 (catches stories
        whose headlines differ but article bodies cover the same event).
-    3. They share the same domain AND have meaningful slug overlap (ratio > 0.40).
+    3. They share the same domain AND have meaningful slug overlap (ratio > 0.45).
 
-Body token overlap was added to compensate for the removal of the Embedder
-(fastembed) path, since no local ML models are available. The overlap is computed
-on the first 500 characters of each item's body to keep pairwise comparison fast.
+Calibration history: the initial 0.55/0.30 thresholds over-aggregated
+unrelated stories that share common Spanish news vocabulary. The current
+0.65/0.50 thresholds are empirically tuned for the Argentinian news corpus.
+Body token overlap is computed on the first 500 characters of each item's
+body to keep pairwise comparison fast. No local ML models are used (per
+user constraint — see topic_key ``preference/no-local-models-pc-weak``).
 
 Single items that do not match any other item form clusters of size 1.
 """
@@ -31,7 +34,7 @@ from noticias.models.item import NewsItem
 from noticias.pipeline.tokenize import tokenize
 
 # Minimum slug similarity ratio for same-domain matching.
-_SLUG_THRESHOLD: Final[float] = 0.4
+_SLUG_THRESHOLD: Final[float] = 0.45
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +66,9 @@ def cluster(items: list[NewsItem]) -> list[Cluster]:
 
     Clustering signals (checked in order for each pair):
 
-        1. **Title fuzzy ratio** > 0.55 (rapidfuzz).
-        2. **Body token overlap** (Jaccard via ``tokenize()``) > 0.30.
-        3. **Same domain + slug ratio** > 0.40.
+        1. **Title fuzzy ratio** > 0.65 (rapidfuzz).
+        2. **Body token overlap** (Jaccard via ``tokenize()``) > 0.50.
+        3. **Same domain + slug ratio** > 0.45.
 
     Args:
         items: De-duplicated, time-windowed news items.
@@ -108,7 +111,7 @@ def cluster(items: list[NewsItem]) -> list[Cluster]:
 
             # 1. rapidfuzz title similarity (primary signal).
             title_ratio = fuzz.ratio(items[i].title, items[j].title) / 100.0
-            if title_ratio > 0.55:
+            if title_ratio > 0.65:
                 union(i, j)
                 matched = True
 
@@ -117,7 +120,7 @@ def cluster(items: list[NewsItem]) -> list[Cluster]:
             if not matched and body_tokens[i] and body_tokens[j]:
                 inter = len(body_tokens[i] & body_tokens[j])
                 uni = len(body_tokens[i] | body_tokens[j])
-                if uni > 0 and (inter / uni) > 0.3:
+                if uni > 0 and (inter / uni) > 0.5:
                     union(i, j)
                     matched = True
 
