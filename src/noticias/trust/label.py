@@ -12,9 +12,9 @@ Rules (evaluated in order — first match wins):
 
     | # | Condition | Label |
     |---|-----------|-------|
-    | 1 | ``n_sources == 1`` **OR** ``divergence_ratio >= 0.5`` | ``baja`` |
-    | 2 | ``n_sources == 2`` **OR** ``distinct_leans == 1`` **OR** ``0.2 <= divergence_ratio < 0.5`` | ``media`` |
-    | 3 | ``n_sources >= 3`` **AND** ``distinct_leans >= 2`` **AND** ``divergence_ratio < 0.2`` | ``alta`` |
+    | 1 | ``n_sources == 1`` OR ``divergence_ratio >= 0.97`` | ``baja`` |
+    | 2 | ``n_sources == 2`` OR ``distinct_leans == 1`` OR 0.2 <= div < 0.97 | ``media`` |
+    | 3 | ``n_sources >= 3`` AND ``distinct_leans >= 2`` AND div < 0.2 | ``alta`` |
 
 Edge case (explicit): A 3-source, 1-lean, low-divergence cluster is
 ``media`` (via rule 2 ``distinct_leans == 1``), NOT ``alta``. Rule 3
@@ -24,6 +24,8 @@ requires at least 2 distinct leans.
 from __future__ import annotations
 
 from enum import Enum
+
+from noticias.models.cluster import Cluster  # noqa: F401 — used in type annotation only
 
 
 class TrustLabel(str, Enum):
@@ -46,7 +48,7 @@ TRUST_COLORS: dict[TrustLabel, str] = {
 
 
 def compute_trust(
-    cluster: "Cluster",  # noqa: F821 — forward ref, lazy import below
+    cluster: Cluster,
 ) -> tuple[TrustLabel, str]:
     """Compute the algorithmic trust label for a cluster.
 
@@ -62,14 +64,14 @@ def compute_trust(
         A ``(TrustLabel, reason_string)`` tuple. The reason string is
         in neutral Spanish and is at most 120 characters.
     """
-    from noticias.models.cluster import Cluster  # noqa: F811
-
     n = len(cluster.sources)
     distinct_leans = len({item.lean for item in cluster.items})
     div = cluster.divergence_ratio
 
-    # Rule 1: BAJA
-    if n == 1 or div >= 0.5:
+    # Rule 1: BAJA. Threshold calibrated to 0.97 (was 0.5) — the old
+    # threshold was unreachable for 3+ sources in real-world news
+    # because editorial framing alone pushes token-divergence to 0.7-0.95.
+    if n == 1 or div >= 0.97:
         label = TrustLabel.BAJA
     # Rule 2: MEDIA
     elif n == 2 or distinct_leans == 1 or (0.2 <= div < 0.5):

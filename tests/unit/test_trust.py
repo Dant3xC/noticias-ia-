@@ -111,15 +111,15 @@ class TestComputeTrust:
         assert label == TrustLabel.BAJA, f"Expected BAJA, got {label}: {reason}"
 
     def test_baja_high_divergence(self) -> None:
-        """3 sources, 2 leans, div=0.6 → baja (div >= 0.5)."""
+        """3 sources, 2 leans, div=0.98 → baja (div >= 0.97 calibrated threshold)."""
         cluster = _trust_cluster(
             n_sources=3,
             leans=["left", "right", "right"],
-            divergence_ratio=0.60,
+            divergence_ratio=0.98,
         )
         label, reason = compute_trust(cluster)
         assert label == TrustLabel.BAJA, f"Expected BAJA, got {label}: {reason}"
-        assert "0.60" in reason
+        assert "0.98" in reason
 
     def test_boundary_divergence_0_2_is_media(self) -> None:
         """Boundary: div exactly 0.2 → media (not alta)."""
@@ -131,12 +131,12 @@ class TestComputeTrust:
         label, reason = compute_trust(cluster)
         assert label == TrustLabel.MEDIA, f"Expected MEDIA, got {label}: {reason}"
 
-    def test_boundary_divergence_0_5_is_baja(self) -> None:
-        """Boundary: div exactly 0.5 → baja."""
+    def test_boundary_divergence_0_97_is_baja(self) -> None:
+        """Boundary: div exactly 0.97 → baja (calibrated threshold, was 0.5)."""
         cluster = _trust_cluster(
             n_sources=3,
             leans=["left", "center", "right"],
-            divergence_ratio=0.50,
+            divergence_ratio=0.97,
         )
         label, reason = compute_trust(cluster)
         assert label == TrustLabel.BAJA, f"Expected BAJA, got {label}: {reason}"
@@ -181,7 +181,7 @@ class TestReasonString:
 
     def test_baja_high_divergence_reason(self) -> None:
         label, reason = compute_trust(
-            _trust_cluster(n_sources=3, leans=["left", "center", "right"], divergence_ratio=0.70),
+            _trust_cluster(n_sources=3, leans=["left", "center", "right"], divergence_ratio=0.98),
         )
         assert label == TrustLabel.BAJA
         assert "divergencia alta" in reason
